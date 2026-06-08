@@ -144,9 +144,9 @@ static bool fwControllerAutomatic(FwConfig *config, FwSession *session, int32_t 
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
-    if (!fwControllerDirectionValid(config, pressureHpa)) {
-        return fwControllerShutdown(session, "pressure opposite target direction");
-    }
+    //if (!fwControllerDirectionValid(config, pressureHpa)) {
+    //    return fwControllerShutdown(session, "pressure opposite target direction");
+    //}
     reached = fwControllerPressureReached(config, pressureHpa);
     if (reached && session->pumpActive) {
         session->pumpActive = false;
@@ -299,7 +299,7 @@ bool fwControllerPoll(FwConfig *config, FwSession *session)
     }
     ok = sysPressureReadHpa(config, &pressureHpa, &adcMv);
     if (!ok) {
-        return fwControllerShutdown(session, "pressure read invalid");
+        return ok; // Invalid pressure read
     }
     ok = fwControllerUpdatePressureStats(session, pressureHpa);
     if (ok && (config->mode != FW_MODE_MANUAL)) {

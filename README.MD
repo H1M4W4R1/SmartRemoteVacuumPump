@@ -36,11 +36,6 @@ Button B controls the valve:
 
 `adaptive_keep` uses PWM pump drive with an adaptive PID loop to hold the configured target pressure. It continuously estimates chamber response while pumping and leak/drift while idle, then adjusts pump duty at runtime for chambers that vary between usages.
 
-Automatic modes include direction protection:
-
-- Negative target: shutdown if current pressure goes above `50 hPa`.
-- Positive target: shutdown if current pressure goes below `-50 hPa`.
-
 ## Calibration
 
 Set `Calibration Active` to `1` over BLE when the valve is open and the sensor is reading atmospheric pressure. The firmware turns pump and valve outputs off before sampling, computes the divider multiplier from the 2.5 V zero-pressure point, stores it in NVS, and clears `Calibration Active`.

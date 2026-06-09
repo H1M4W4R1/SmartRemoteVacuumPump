@@ -17,7 +17,8 @@ Button A controls the pump:
 - If the pump is off, button A starts the pump.
 - In manual mode, button A also locks the valve when starting the pump.
 - In automatic modes, button A does not change valve state.
-- If the pump is running, button A stops it and marks the pump as temporarily disabled.
+- In `automatic_keep` and `adaptive_keep`, button A follows the virtual controller state, so it suspends the controller even when the physical pump is currently idle at target pressure.
+- If the pump or virtual controller is running, button A stops it and marks the pump as temporarily disabled.
 - Pressing button A again manually reactivates the pump and clears temporary disable.
 
 Button B controls the valve:

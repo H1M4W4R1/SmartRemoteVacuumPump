@@ -187,9 +187,14 @@ static bool fwControllerAdaptiveKeep(FwConfig *config, FwSession *session, int32
     elapsedMs = (elapsedMs == 0UL) ? 1UL : elapsedMs;
     elapsedMs = (elapsedMs > 1000UL) ? 1000UL : elapsedMs;
     errorHpa = fwControllerAdaptiveError(config, pressureHpa);
-    if (!session->temporaryPumpDisabled) {
-        dutyX1000 = fwControllerAdaptivePid(errorHpa, elapsedMs);
+    if (session->temporaryPumpDisabled) {
+        g_adaptiveIntegralHpaMs = 0L;
+        ok = fwControllerAdaptiveCalibrate(config, session, pressureHpa, errorHpa, elapsedMs);
+        ok = fwControllerAdaptiveApply(session, 0L, nowMs) && ok;
+        g_adaptiveLastMs = nowMs;
+        return fwControllerApplyOutputs(session) && ok;
     }
+    dutyX1000 = fwControllerAdaptivePid(errorHpa, elapsedMs);
     ok = fwControllerAdaptiveCalibrate(config, session, pressureHpa, errorHpa, elapsedMs);
     ok = fwControllerAdaptiveApply(session, dutyX1000, nowMs) && ok;
     g_adaptiveLastMs = nowMs;
@@ -335,9 +340,9 @@ static bool fwControllerAutomatic(FwConfig *config, FwSession *session, int32_t 
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
-    if (!fwControllerDirectionValid(config, pressureHpa)) {
-        return fwControllerShutdown(session, "pressure opposite target direction");
-    }
+    // if (!fwControllerDirectionValid(config, pressureHpa)) {
+    //    return fwControllerShutdown(session, "pressure opposite target direction");
+    // } Commented-out, causes issues too often
     if (config->mode == FW_MODE_ADAPTIVE_KEEP) {
         return fwControllerAdaptiveKeep(config, session, pressureHpa);
     }
@@ -411,16 +416,31 @@ static bool fwControllerUpdateTime(const FwConfig *config, FwSession *session)
     return true;
 }
 
+static bool fwControllerRemotePumpActive(const FwConfig *config, const FwSession *session)
+{
+    assert(config != nullptr);
+    assert(session != nullptr);
+    if ((config == nullptr) || (session == nullptr)) {
+        return false;
+    }
+    if ((config->mode == FW_MODE_AUTOMATIC_KEEP) || (config->mode == FW_MODE_ADAPTIVE_KEEP)) {
+        return !session->temporaryPumpDisabled;
+    }
+    return session->pumpActive;
+}
+
 bool fwControllerHandleRf(FwConfig *config, FwSession *session, SysRfButton button)
 {
     bool ok = true;
+    bool remotePumpActive = false;
     assert(config != nullptr);
     assert(session != nullptr);
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
     if ((button == SYS_RF_BUTTON_A) && !config->pumpRemoteDisabled) {
-        if (session->pumpActive) {
+        remotePumpActive = fwControllerRemotePumpActive(config, session);
+        if (remotePumpActive) {
             ok = fwControllerSetPump(session, false, true);
             Serial.println("RF: button A accepted, manual pump suspend");
             return ok;

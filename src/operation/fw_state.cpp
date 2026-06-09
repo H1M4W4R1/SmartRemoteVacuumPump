@@ -148,12 +148,15 @@ bool fwPressureCalibrationSave(FwConfig *config, int32_t dividerMultiplierX1000)
 const char *fwModeToText(FwMode mode)
 {
     assert(mode >= FW_MODE_MANUAL);
-    assert(mode <= FW_MODE_AUTOMATIC_SINGLE);
+    assert(mode <= FW_MODE_ADAPTIVE_KEEP);
     if (mode == FW_MODE_AUTOMATIC_KEEP) {
         return "automatic_keep";
     }
     if (mode == FW_MODE_AUTOMATIC_SINGLE) {
         return "automatic_single";
+    }
+    if (mode == FW_MODE_ADAPTIVE_KEEP) {
+        return "adaptive_keep";
     }
     return "manual";
 }
@@ -175,6 +178,10 @@ bool fwModeFromText(const String &text, FwMode *mode)
     }
     if (text == "automatic_single") {
         *mode = FW_MODE_AUTOMATIC_SINGLE;
+        return true;
+    }
+    if (text == "adaptive_keep") {
+        *mode = FW_MODE_ADAPTIVE_KEEP;
         return true;
     }
     return false;

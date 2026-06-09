@@ -33,6 +33,8 @@ Button B controls the valve:
 
 `automatic_keep` stops pumping when target pressure is reached and restarts when pressure moves outside the configured deadzone. If the user manually disables the pump, the firmware waits for manual reactivation before continuing in `automatic_keep`.
 
+`adaptive_keep` uses PWM pump drive with an adaptive PID loop to hold the configured target pressure. It continuously estimates chamber response while pumping and leak/drift while idle, then adjusts pump duty at runtime for chambers that vary between usages.
+
 Automatic modes include direction protection:
 
 - Negative target: shutdown if current pressure goes above `50 hPa`.
@@ -53,7 +55,7 @@ Values are sent as text:
 - Boolean values: `0` or `1`
 - Time values: seconds integer, no unit suffix
 - Pressure values: hPa integer, no unit suffix
-- Mode values: `manual`, `automatic_keep`, or `automatic_single`
+- Mode values: `manual`, `automatic_keep`, `automatic_single`, or `adaptive_keep`
 
 Each characteristic has a Characteristic User Description (`0x2901`) descriptor with the friendly name listed below. Each service also exposes a `Service Name` characteristic for debug tools.
 

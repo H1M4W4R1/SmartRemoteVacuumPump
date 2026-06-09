@@ -5,7 +5,8 @@
 enum FwMode {
     FW_MODE_MANUAL = 0,
     FW_MODE_AUTOMATIC_KEEP = 1,
-    FW_MODE_AUTOMATIC_SINGLE = 2
+    FW_MODE_AUTOMATIC_SINGLE = 2,
+    FW_MODE_ADAPTIVE_KEEP = 3
 };
 
 struct FwConfig {

@@ -31,9 +31,10 @@
 #define BLE_UUID_DEFAULT_ON "ae615002-0007-4000-8000-0d670255c8ef"
 #define BLE_UUID_CALIBRATION "ae615002-0008-4000-8000-0d670255c8ef"
 #define BLE_UUID_DEADZONE "ae615002-0009-4000-8000-0d670255c8ef"
+#define BLE_UUID_OTA "ae615002-000a-4000-8000-0d670255c8ef"
 
 #define BLE_SESSION_HANDLE_COUNT 48U
-#define BLE_CONFIG_HANDLE_COUNT 36U
+#define BLE_CONFIG_HANDLE_COUNT 40U
 
 enum BleWriteId {
     BLE_WRITE_PUMP = 1,
@@ -47,7 +48,8 @@ enum BleWriteId {
     BLE_WRITE_DEFAULT_ON = 9,
     BLE_WRITE_CALIBRATION = 10,
     BLE_WRITE_DEADZONE = 11,
-    BLE_WRITE_CURRENT_PRESSURE = 12
+    BLE_WRITE_CURRENT_PRESSURE = 12,
+    BLE_WRITE_OTA = 13
 };
 
 static FwConfig *g_config = nullptr;
@@ -71,7 +73,9 @@ static BLECharacteristic *g_target = nullptr;
 static BLECharacteristic *g_defaultOn = nullptr;
 static BLECharacteristic *g_calibration = nullptr;
 static BLECharacteristic *g_deadzone = nullptr;
+static BLECharacteristic *g_ota = nullptr;
 static bool g_connected = false;
+static bool g_started = false;
 static uint32_t g_lastNotifyMs = 0UL;
 
 static String bleReadText(BLECharacteristic *characteristic)
@@ -188,7 +192,7 @@ private:
         }
         if ((m_id == BLE_WRITE_PUMP) || (m_id == BLE_WRITE_VALVE) || (m_id == BLE_WRITE_PUMP_LOCK)
             || (m_id == BLE_WRITE_VALVE_LOCK) || (m_id == BLE_WRITE_DEFAULT_ON)
-            || (m_id == BLE_WRITE_CALIBRATION)) {
+            || (m_id == BLE_WRITE_CALIBRATION) || (m_id == BLE_WRITE_OTA)) {
             if (!bleParseBool(text, &boolValue)) {
                 return false;
             }
@@ -246,6 +250,9 @@ private:
         }
         if (m_id == BLE_WRITE_CALIBRATION) {
             g_config->calibrationActive = boolValue;
+        }
+        if (m_id == BLE_WRITE_OTA) {
+            g_config->otaActive = boolValue;
         }
         if (m_id == BLE_WRITE_DEADZONE) {
             if ((intValue < FW_MIN_PRESSURE_DEADZONE_HPA) || (intValue > FW_MAX_PRESSURE_DEADZONE_HPA)) {
@@ -368,14 +375,15 @@ static bool bleCreateConfig(BLEService *service)
     g_defaultOn = bleCreate(service, BLE_UUID_DEFAULT_ON, rw, "Default On");
     g_calibration = bleCreate(service, BLE_UUID_CALIBRATION, rwn, "Calibration Active");
     g_deadzone = bleCreate(service, BLE_UUID_DEADZONE, rwn, "Pressure Deadzone");
-    return g_deadzone != nullptr;
+    g_ota = bleCreate(service, BLE_UUID_OTA, rwn, "OTA");
+    return g_ota != nullptr;
 }
 
 static bool bleAssignCallbacks(void)
 {
     assert(g_maxSession != nullptr);
-    assert(g_deadzone != nullptr);
-    if ((g_maxSession == nullptr) || (g_deadzone == nullptr)) {
+    assert(g_ota != nullptr);
+    if ((g_maxSession == nullptr) || (g_ota == nullptr)) {
         return false;
     }
     g_maxSession->setCallbacks(new BleWriteCallbacks(BLE_WRITE_MAX_SESSION));
@@ -387,6 +395,7 @@ static bool bleAssignCallbacks(void)
     g_defaultOn->setCallbacks(new BleWriteCallbacks(BLE_WRITE_DEFAULT_ON));
     g_calibration->setCallbacks(new BleWriteCallbacks(BLE_WRITE_CALIBRATION));
     g_deadzone->setCallbacks(new BleWriteCallbacks(BLE_WRITE_DEADZONE));
+    g_ota->setCallbacks(new BleWriteCallbacks(BLE_WRITE_OTA));
     return true;
 }
 
@@ -429,6 +438,7 @@ static bool bleUpdateConfigValues(const FwConfig *config, bool notify)
     ok = bleSet(g_defaultOn, String(config->defaultOn ? 1 : 0), false) && ok;
     ok = bleSet(g_calibration, String(config->calibrationActive ? 1 : 0), notifyActive) && ok;
     ok = bleSet(g_deadzone, String(config->pressureDeadzoneHpa), notifyActive) && ok;
+    ok = bleSet(g_ota, String(config->otaActive ? 1 : 0), notifyActive) && ok;
     return ok;
 }
 
@@ -459,8 +469,26 @@ bool sysBleInit(FwConfig *config, FwSession *session)
     g_server->getAdvertising()->addServiceUUID(BLE_UUID_SESSION_SERVICE);
     g_server->getAdvertising()->addServiceUUID(BLE_UUID_CONFIG_SERVICE);
     g_server->getAdvertising()->start();
+    g_started = true;
     Serial.printf("BLE: advertising name=%s\n", FW_DEVICE_NAME);
     return ok;
+}
+
+bool sysBleStop(void)
+{
+    assert(g_server != nullptr);
+    assert((g_started == true) || (g_started == false));
+    if (!g_started) {
+        return true;
+    }
+    if (g_server != nullptr) {
+        g_server->getAdvertising()->stop();
+    }
+    BLEDevice::deinit(true);
+    g_started = false;
+    g_connected = false;
+    Serial.println("BLE: stopped before OTA");
+    return true;
 }
 
 bool sysBlePoll(const FwConfig *config, const FwSession *session)
@@ -471,6 +499,9 @@ bool sysBlePoll(const FwConfig *config, const FwSession *session)
     assert(session != nullptr);
     if ((config == nullptr) || (session == nullptr)) {
         return false;
+    }
+    if (!g_started) {
+        return true;
     }
     if ((nowMs - g_lastNotifyMs) < FW_BLE_UPDATE_PERIOD_MS) {
         return true;

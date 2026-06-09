@@ -6,9 +6,9 @@ Author: H1M4W4R1
 
 ## What It Does
 
-`OST-RSP` controls a pump and valve from BLE and a simple RF remote. It reads an analog pressure sensor, exposes live session data over BLE, and can run in manual or automatic pressure-control modes.
+`OST-RSP` controls a pump and valve from BLE and a simple RF remote. It reads an analog pressure sensor, exposes live session data over BLE, can run in manual or automatic pressure-control modes, and can enable OTA programming on demand.
 
-The firmware is built for local wired flashing and BLE control. OTA and Wi-Fi are intentionally not used.
+The firmware boots with BLE only. Wi-Fi AP and OTA are disabled until the user writes `1` to the `OTA` BLE configuration characteristic.
 
 ## Controls
 
@@ -92,6 +92,13 @@ Service UUID: `ae615002-0000-4000-8000-0d670255c8ef`
 | Default On | RW | `ae615002-0007-4000-8000-0d670255c8ef` | bool integer, stored in NVS |
 | Calibration Active | RWN | `ae615002-0008-4000-8000-0d670255c8ef` | bool integer |
 | Pressure Deadzone | RWN | `ae615002-0009-4000-8000-0d670255c8ef` | hPa integer, stored in NVS |
+| OTA | RWN | `ae615002-000a-4000-8000-0d670255c8ef` | bool integer, runtime only |
+
+## OTA
+
+Write `1` to the `OTA` characteristic to stop BLE, start the Wi-Fi AP named `OST-RSP`, and enable ArduinoOTA programming. The AP password is `VPC-7KQ9-M4W2`. OTA itself has no password.
+
+The `OTA` value is not stored in NVS. Rebooting the device returns to BLE-only startup with OTA disabled.
 
 ## Hardware
 

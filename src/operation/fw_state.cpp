@@ -22,6 +22,7 @@ static bool fwConfigApplyDefaults(FwConfig *config)
     config->targetPressureHpa = -500L;
     config->defaultOn = false;
     config->calibrationActive = false;
+    config->otaActive = false;
     config->pressureDeadzoneHpa = FW_DEFAULT_PRESSURE_DEADZONE_HPA;
     config->dividerMultiplierX1000 = FW_DEFAULT_DIVIDER_MULTIPLIER_X1000;
     config->calibrated = false;

@@ -1,14 +1,12 @@
-# VPController
+<div align="center">
+  <h1>Smart Remote Vacuum Pump</h1>
+  <img src="https://github.com/H1M4W4R1/RemoteVacuumPump/blob/master/images/pump.webp?raw=true" alt="Device photo"/>
+</div>
 
-ESP32 pressure controller firmware for `OST-RSP`.
+This project is a direct upgrade of previous one available <a href="https://github.com/H1M4W4R1/RemoteVacuumPump">here</a>.
+Firmware controls a normally-open valve and three parallel 555-type pumps using cheap -100 to 100kPa pressure sensor as feedback.
+Pumps can be controlled using 433MHz ASK remote or using BLE.
 
-Author: H1M4W4R1
-
-## What It Does
-
-`OST-RSP` controls a pump and valve from BLE and a simple RF remote. It reads an analog pressure sensor, exposes live session data over BLE, can run in manual or automatic pressure-control modes, and can enable OTA programming on demand.
-
-The firmware boots with BLE only. Wi-Fi AP and OTA are disabled until the user writes `1` to the `OTA` BLE configuration characteristic.
 
 ## Controls
 
@@ -59,61 +57,61 @@ Each characteristic has a Characteristic User Description (`0x2901`) descriptor 
 
 Service UUID: `ae615001-0000-4000-8000-0d670255c8ef`
 
-| Name | Access | UUID | Format |
-| --- | --- | --- | --- |
-| Service Name | R | `ae615001-00ff-4000-8000-0d670255c8ef` | `Session` |
-| Pump Active | RWN | `ae615001-0001-4000-8000-0d670255c8ef` | bool integer |
-| Valve Active | RWN | `ae615001-0002-4000-8000-0d670255c8ef` | bool integer |
-| Current Session Time | RN | `ae615001-0003-4000-8000-0d670255c8ef` | seconds integer |
-| Current Pumping Time | RN | `ae615001-0004-4000-8000-0d670255c8ef` | seconds integer |
-| Last Session Time | RN | `ae615001-0005-4000-8000-0d670255c8ef` | seconds integer |
-| Total Session Time | RN | `ae615001-0006-4000-8000-0d670255c8ef` | seconds integer |
-| Minimum Pressure | RN | `ae615001-0007-4000-8000-0d670255c8ef` | hPa integer |
-| Maximum Pressure | RN | `ae615001-0008-4000-8000-0d670255c8ef` | hPa integer |
-| Current Pressure | RWN | `ae615001-0009-4000-8000-0d670255c8ef` | hPa integer |
+| Name                 | Access | UUID                                   | Format          |
+|----------------------|--------|----------------------------------------|-----------------|
+| Service Name         | R      | `ae615001-00ff-4000-8000-0d670255c8ef` | `Session`       |
+| Pump Active          | RWN    | `ae615001-0001-4000-8000-0d670255c8ef` | bool integer    |
+| Valve Active         | RWN    | `ae615001-0002-4000-8000-0d670255c8ef` | bool integer    |
+| Current Session Time | RN     | `ae615001-0003-4000-8000-0d670255c8ef` | seconds integer |
+| Current Pumping Time | RN     | `ae615001-0004-4000-8000-0d670255c8ef` | seconds integer |
+| Last Session Time    | RN     | `ae615001-0005-4000-8000-0d670255c8ef` | seconds integer |
+| Total Session Time   | RN     | `ae615001-0006-4000-8000-0d670255c8ef` | seconds integer |
+| Minimum Pressure     | RN     | `ae615001-0007-4000-8000-0d670255c8ef` | hPa integer     |
+| Maximum Pressure     | RN     | `ae615001-0008-4000-8000-0d670255c8ef` | hPa integer     |
+| Current Pressure     | RWN    | `ae615001-0009-4000-8000-0d670255c8ef` | hPa integer     |
 
 ### Configuration Service
 
 Service UUID: `ae615002-0000-4000-8000-0d670255c8ef`
 
-| Name | Access | UUID | Format |
-| --- | --- | --- | --- |
-| Service Name | R | `ae615002-00ff-4000-8000-0d670255c8ef` | `Configuration` |
-| Maximum Session Time | RW | `ae615002-0001-4000-8000-0d670255c8ef` | seconds integer |
-| Maximum Pumping Time | RW | `ae615002-0002-4000-8000-0d670255c8ef` | seconds integer |
-| Mode | RW | `ae615002-0003-4000-8000-0d670255c8ef` | string |
-| Pump Remote Disabled | RW | `ae615002-0004-4000-8000-0d670255c8ef` | bool integer |
-| Valve Remote Disabled | RW | `ae615002-0005-4000-8000-0d670255c8ef` | bool integer |
-| Target Pressure | RW | `ae615002-0006-4000-8000-0d670255c8ef` | hPa integer |
-| Default On | RW | `ae615002-0007-4000-8000-0d670255c8ef` | bool integer, stored in NVS |
-| Calibration Active | RWN | `ae615002-0008-4000-8000-0d670255c8ef` | bool integer |
-| Pressure Deadzone | RWN | `ae615002-0009-4000-8000-0d670255c8ef` | hPa integer, stored in NVS |
-| OTA | RWN | `ae615002-000a-4000-8000-0d670255c8ef` | bool integer, runtime only |
+| Name                  | Access | UUID                                   | Format                      |
+|-----------------------|--------|----------------------------------------|-----------------------------|
+| Service Name          | R      | `ae615002-00ff-4000-8000-0d670255c8ef` | `Configuration`             |
+| Maximum Session Time  | RW     | `ae615002-0001-4000-8000-0d670255c8ef` | seconds integer             |
+| Maximum Pumping Time  | RW     | `ae615002-0002-4000-8000-0d670255c8ef` | seconds integer             |
+| Mode                  | RW     | `ae615002-0003-4000-8000-0d670255c8ef` | string                      |
+| Pump Remote Disabled  | RW     | `ae615002-0004-4000-8000-0d670255c8ef` | bool integer                |
+| Valve Remote Disabled | RW     | `ae615002-0005-4000-8000-0d670255c8ef` | bool integer                |
+| Target Pressure       | RW     | `ae615002-0006-4000-8000-0d670255c8ef` | hPa integer                 |
+| Default On            | RW     | `ae615002-0007-4000-8000-0d670255c8ef` | bool integer, stored in NVS |
+| Calibration Active    | RWN    | `ae615002-0008-4000-8000-0d670255c8ef` | bool integer                |
+| Pressure Deadzone     | RWN    | `ae615002-0009-4000-8000-0d670255c8ef` | hPa integer, stored in NVS  |
+| OTA                   | RWN    | `ae615002-000a-4000-8000-0d670255c8ef` | bool integer, runtime only  |
 
 ## OTA
 
-Write `1` to the `OTA` characteristic to stop BLE, start the Wi-Fi AP named `OST-RSP`, and enable ArduinoOTA programming. The AP password is `VPC-7KQ9-M4W2`. OTA itself has no password.
+Write `1` to the `OTA` characteristic to stop BLE, start the Wi-Fi AP named `OST-RSP`, and enable ArduinoOTA programming.
+The default AP password is `VPC-7KQ9-M4W2`. OTA itself has no password.
 
-The `OTA` value is not stored in NVS. Rebooting the device returns to BLE-only startup with OTA disabled.
+## Pinout
 
-## Hardware
+| Signal            | GPIO |
+|-------------------|-----:|
+| RF_DATA           |   26 |
+| OUT_0 / Pump      |   25 |
+| OUT_1 / Valve     |   17 |
+| ANALOG / Pressure |   34 |
 
-| Signal | GPIO |
-| --- | ---: |
-| RF_DATA | 26 |
-| OUT_0 / Pump | 25 |
-| OUT_1 / Valve | 17 |
-| ANALOG / Pressure | 34 |
-
+## Pressure sensor information
 Pressure sensor: `XGZP6847A100KPGPN`
 
 | Sensor voltage | Pressure |
-| ---: | ---: |
-| 0.5 V | -100 kPa |
-| 1.5 V | -50 kPa |
-| 2.5 V | 0 kPa |
-| 3.5 V | 50 kPa |
-| 4.5 V | 100 kPa |
+|---------------:|---------:|
+|          0.5 V | -100 kPa |
+|          1.5 V |  -50 kPa |
+|          2.5 V |    0 kPa |
+|          3.5 V |   50 kPa |
+|          4.5 V |  100 kPa |
 
 The analog path is filtered with a `750R/330nF` low-pass filter and divided for 3.3 V ADC logic.
 

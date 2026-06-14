@@ -7,7 +7,7 @@ This project is a direct upgrade of previous one available <a href="https://gith
 Firmware controls a normally-open valve and three parallel 555-type pumps using cheap -100 to 100kPa pressure sensor as feedback.
 Pumps can be controlled using 433MHz ASK remote or using BLE.
 
-Current version: `1.0.1`
+Current version: `1.0.2`
 
 ## Controls
 
@@ -130,11 +130,21 @@ pio run
 
 ## Versioning
 
-This project uses semantic versioning. The current released version is `1.0.1`.
+This project uses semantic versioning. The current released version is `1.0.2`.
 
 When firmware behavior, BLE values, or user-facing documentation changes, update both the current version above and the newest changelog entry in this file. Keep changelog entries newest first.
 
 ## Changelog
+
+### 1.0.2 - 2026-06-14
+
+- Split controller operation-mode logic into separate firmware files:
+  - `fw_controller_manual.cpp`
+  - `fw_controller_target_oneshot.cpp`
+  - `fw_controller_target_hysteresis.cpp`
+  - `fw_controller_target_adaptive.cpp`
+- Added shared controller common code for pump duty, output application, shutdown, and pressure threshold helpers.
+- Kept `fw_controller.cpp` focused on public controller flow, RF handling, timing, calibration, and mode dispatch.
 
 ### 1.0.1 - 2026-06-14
 

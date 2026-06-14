@@ -7,7 +7,7 @@ This project is a direct upgrade of previous one available <a href="https://gith
 Firmware controls a normally-open valve and three parallel 555-type pumps using cheap -100 to 100kPa pressure sensor as feedback.
 Pumps can be controlled using 433MHz ASK remote or using BLE.
 
-Current version: `1.1.1`
+Current version: `1.2.0`
 
 ## Controls
 
@@ -97,12 +97,6 @@ Service UUID: `ae615002-0000-4000-8000-0d670255c8ef`
 | Default On            | RW     | `ae615002-0007-4000-8000-0d670255c8ef` | bool integer, stored in NVS |
 | Calibration Active    | RWN    | `ae615002-0008-4000-8000-0d670255c8ef` | bool integer                |
 | Pressure Deadzone     | RWN    | `ae615002-0009-4000-8000-0d670255c8ef` | hPa integer, stored in NVS  |
-| OTA                   | RWN    | `ae615002-000a-4000-8000-0d670255c8ef` | bool integer, runtime only  |
-
-## OTA
-
-Write `1` to the `OTA` characteristic to stop BLE, start the Wi-Fi AP named `OST-RSP`, and enable ArduinoOTA programming.
-The default AP password is `VPC-7KQ9-M4W2`. OTA itself has no password.
 
 ## Pinout
 
@@ -140,11 +134,16 @@ pio run
 
 ## Versioning
 
-This project uses semantic versioning. The current released version is `1.1.1`.
+This project uses semantic versioning. The current released version is `1.2.0`.
 
 When firmware behavior, BLE values, or user-facing documentation changes, update both the current version above and the newest changelog entry in this file. Keep changelog entries newest first.
 
 ## Changelog
+
+### 1.2.0 - 2026-06-14
+
+- Removed ArduinoOTA support and its Wi-Fi access point configuration.
+- Removed the BLE `OTA` characteristic from the Configuration service.
 
 ### 1.1.1 - 2026-06-14
 

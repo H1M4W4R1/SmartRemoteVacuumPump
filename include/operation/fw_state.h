@@ -20,7 +20,6 @@ struct FwConfig {
     int32_t targetPressureHpa;
     bool defaultOn;
     bool calibrationActive;
-    bool otaActive;
     int32_t pressureDeadzoneHpa;
     int32_t dividerMultiplierX1000;
     bool calibrated;

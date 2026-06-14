@@ -6,7 +6,6 @@
 #include <operation/fw_controller.h>
 #include <operation/fw_state.h>
 #include <systems/sys_ble.h>
-#include <systems/sys_ota.h>
 #include <systems/sys_outputs.h>
 #include <systems/sys_pressure.h>
 #include <systems/sys_rf.h>
@@ -14,7 +13,6 @@
 
 static FwConfig g_config;
 static FwSession g_session;
-static bool g_bleActive = true;
 
 static bool appInit(void)
 {
@@ -55,15 +53,7 @@ void loop()
     }
     ok = fwControllerPoll(&g_config, &g_session) && ok;
     ok = fwConfigSaveIfPending(&g_config) && ok;
-    if (g_config.otaActive && g_bleActive) {
-        ok = sysBleStop() && ok;
-        g_bleActive = false;
-    }
-    if (g_config.otaActive) {
-        ok = sysOtaPoll(&g_config) && ok;
-    } else if (g_bleActive) {
-        ok = sysBlePoll(&g_config, &g_session) && ok;
-    }
+    ok = sysBlePoll(&g_config, &g_session) && ok;
     if (!ok) {
         Serial.println("APP: loop warning, one subsystem returned false");
     }

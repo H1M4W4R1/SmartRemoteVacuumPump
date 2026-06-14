@@ -203,7 +203,7 @@ private:
     bool writeMode(FwMode mode)
     {
         assert(g_config != nullptr);
-        assert(mode <= FW_MODE_ADAPTIVE_KEEP);
+        assert(mode <= FW_MODE_TARGET_ADAPTIVE);
         g_config->mode = mode;
         return true;
     }

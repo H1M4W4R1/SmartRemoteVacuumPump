@@ -149,15 +149,15 @@ bool fwPressureCalibrationSave(FwConfig *config, int32_t dividerMultiplierX1000)
 const char *fwModeToText(FwMode mode)
 {
     assert(mode >= FW_MODE_MANUAL);
-    assert(mode <= FW_MODE_ADAPTIVE_KEEP);
-    if (mode == FW_MODE_AUTOMATIC_KEEP) {
-        return "automatic_keep";
+    assert(mode <= FW_MODE_TARGET_ADAPTIVE);
+    if (mode == FW_MODE_TARGET_HYSTERESIS) {
+        return "target_hysteresis";
     }
-    if (mode == FW_MODE_AUTOMATIC_SINGLE) {
-        return "automatic_single";
+    if (mode == FW_MODE_TARGET_ONESHOT) {
+        return "target_oneshot";
     }
-    if (mode == FW_MODE_ADAPTIVE_KEEP) {
-        return "adaptive_keep";
+    if (mode == FW_MODE_TARGET_ADAPTIVE) {
+        return "target_adaptive";
     }
     return "manual";
 }
@@ -173,16 +173,16 @@ bool fwModeFromText(const String &text, FwMode *mode)
         *mode = FW_MODE_MANUAL;
         return true;
     }
-    if (text == "automatic_keep") {
-        *mode = FW_MODE_AUTOMATIC_KEEP;
+    if (text == "target_hysteresis") {
+        *mode = FW_MODE_TARGET_HYSTERESIS;
         return true;
     }
-    if (text == "automatic_single") {
-        *mode = FW_MODE_AUTOMATIC_SINGLE;
+    if (text == "target_oneshot") {
+        *mode = FW_MODE_TARGET_ONESHOT;
         return true;
     }
-    if (text == "adaptive_keep") {
-        *mode = FW_MODE_ADAPTIVE_KEEP;
+    if (text == "target_adaptive") {
+        *mode = FW_MODE_TARGET_ADAPTIVE;
         return true;
     }
     return false;

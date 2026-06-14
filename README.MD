@@ -7,6 +7,7 @@ This project is a direct upgrade of previous one available <a href="https://gith
 Firmware controls a normally-open valve and three parallel 555-type pumps using cheap -100 to 100kPa pressure sensor as feedback.
 Pumps can be controlled using 433MHz ASK remote or using BLE.
 
+Current version: `1.0.1`
 
 ## Controls
 
@@ -15,7 +16,7 @@ Button A controls the pump:
 - If the pump is off, button A starts the pump.
 - In manual mode, button A also locks the valve when starting the pump.
 - In automatic modes, button A does not change valve state.
-- In `automatic_keep` and `adaptive_keep`, button A follows the virtual controller state, so it suspends the controller even when the physical pump is currently idle at target pressure.
+- In `target_hysteresis` and `target_adaptive`, button A follows the virtual controller state, so it suspends the controller even when the physical pump is currently idle at target pressure.
 - If the pump or virtual controller is running, button A stops it and marks the pump as temporarily disabled.
 - Pressing button A again manually reactivates the pump and clears temporary disable.
 
@@ -28,11 +29,11 @@ Button B controls the valve:
 
 `manual` lets the user control pump and valve directly.
 
-`automatic_single` stops pumping when target pressure is reached. If the user manually disables the pump, the firmware waits for manual reactivation before continuing in `automatic_single`.
+`target_oneshot` stops pumping when target pressure is reached. If the user manually disables the pump, the firmware waits for manual reactivation before continuing in `target_oneshot`.
 
-`automatic_keep` stops pumping when target pressure is reached and restarts when pressure moves outside the configured deadzone. If the user manually disables the pump, the firmware waits for manual reactivation before continuing in `automatic_keep`.
+`target_hysteresis` stops pumping when target pressure is reached and restarts when pressure moves outside the configured deadzone. If the user manually disables the pump, the firmware waits for manual reactivation before continuing in `target_hysteresis`.
 
-`adaptive_keep` uses PWM pump drive with an adaptive PID loop to hold the configured target pressure. It continuously estimates chamber response while pumping and leak/drift while idle, then adjusts pump duty at runtime for chambers that vary between usages.
+`target_adaptive` uses PWM pump drive with an adaptive PID loop to hold the configured target pressure. It continuously estimates chamber response while pumping and leak/drift while idle, then adjusts pump duty at runtime for chambers that vary between usages.
 
 ## Calibration
 
@@ -49,7 +50,7 @@ Values are sent as text:
 - Boolean values: `0` or `1`
 - Time values: seconds integer, no unit suffix
 - Pressure values: hPa integer, no unit suffix
-- Mode values: `manual`, `automatic_keep`, `automatic_single`, or `adaptive_keep`
+- Mode values: `manual`, `target_hysteresis`, `target_oneshot`, or `target_adaptive`
 
 Each characteristic has a Characteristic User Description (`0x2901`) descriptor with the friendly name listed below. Each service also exposes a `Service Name` characteristic for debug tools.
 
@@ -126,3 +127,19 @@ Open the serial monitor, press remote buttons, and copy logged unknown codes int
 ```powershell
 pio run
 ```
+
+## Versioning
+
+This project uses semantic versioning. The current released version is `1.0.1`.
+
+When firmware behavior, BLE values, or user-facing documentation changes, update both the current version above and the newest changelog entry in this file. Keep changelog entries newest first.
+
+## Changelog
+
+### 1.0.1 - 2026-06-14
+
+- Added README version tracking information.
+- Renamed BLE mode values:
+  - `automatic_keep` -> `target_hysteresis`
+  - `adaptive_keep` -> `target_adaptive`
+  - `automatic_single` -> `target_oneshot`

@@ -78,7 +78,7 @@ static bool fwControllerAdaptiveRefresh(const FwConfig *config, int32_t pressure
 {
     bool changed = false;
     assert(config != nullptr);
-    assert(config->mode <= FW_MODE_ADAPTIVE_KEEP);
+    assert(config->mode <= FW_MODE_TARGET_ADAPTIVE);
     if (config == nullptr) {
         return false;
     }
@@ -115,7 +115,7 @@ static bool fwControllerAdaptiveCalibrate(const FwConfig *config, const FwSessio
         g_adaptiveLeakX1000 = fwControllerClampInt32(leakX1000, 0L, 200000L);
     }
     g_adaptiveLastErrorHpa = errorHpa;
-    return config->mode == FW_MODE_ADAPTIVE_KEEP;
+    return config->mode == FW_MODE_TARGET_ADAPTIVE;
 }
 
 static int32_t fwControllerAdaptiveFeedForward(void)
@@ -286,22 +286,6 @@ static bool fwControllerUpdatePressureStats(FwSession *session, int32_t pressure
     return true;
 }
 
-static bool fwControllerDirectionValid(const FwConfig *config, int32_t pressureHpa)
-{
-    assert(config != nullptr);
-    assert(pressureHpa < 2000L);
-    if (config == nullptr) {
-        return false;
-    }
-    if ((config->targetPressureHpa < 0L) && (pressureHpa > 50L)) {
-        return false;
-    }
-    if ((config->targetPressureHpa > 0L) && (pressureHpa < -50L)) {
-        return false;
-    }
-    return true;
-}
-
 static bool fwControllerPressureReached(const FwConfig *config, int32_t pressureHpa)
 {
     assert(config != nullptr);
@@ -340,10 +324,7 @@ static bool fwControllerAutomatic(FwConfig *config, FwSession *session, int32_t 
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
-    // if (!fwControllerDirectionValid(config, pressureHpa)) {
-    //    return fwControllerShutdown(session, "pressure opposite target direction");
-    // } Commented-out, causes issues too often
-    if (config->mode == FW_MODE_ADAPTIVE_KEEP) {
+    if (config->mode == FW_MODE_TARGET_ADAPTIVE) {
         return fwControllerAdaptiveKeep(config, session, pressureHpa);
     }
     g_pumpDutyX1000 = session->pumpActive ? 1000L : 0L;
@@ -354,10 +335,10 @@ static bool fwControllerAutomatic(FwConfig *config, FwSession *session, int32_t 
         Serial.printf("CTRL: target reached pressure_hPa=%ld\n", pressureHpa);
     }
     restart = fwControllerPressureBelowRestart(config, pressureHpa);
-    if ((config->mode == FW_MODE_AUTOMATIC_KEEP) && restart && !session->temporaryPumpDisabled) {
+    if ((config->mode == FW_MODE_TARGET_HYSTERESIS) && restart && !session->temporaryPumpDisabled) {
         if (!session->pumpActive) {
             session->currentPumpingSeconds = 0UL;
-            Serial.printf("CTRL: automatic_keep restart pressure_hPa=%ld target_hPa=%ld deadzone_hPa=%ld\n",
+            Serial.printf("CTRL: target_hysteresis restart pressure_hPa=%ld target_hPa=%ld deadzone_hPa=%ld\n",
                 pressureHpa, config->targetPressureHpa, config->pressureDeadzoneHpa);
         }
         session->pumpActive = true;
@@ -423,7 +404,7 @@ static bool fwControllerRemotePumpActive(const FwConfig *config, const FwSession
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
-    if ((config->mode == FW_MODE_AUTOMATIC_KEEP) || (config->mode == FW_MODE_ADAPTIVE_KEEP)) {
+    if ((config->mode == FW_MODE_TARGET_HYSTERESIS) || (config->mode == FW_MODE_TARGET_ADAPTIVE)) {
         return !session->temporaryPumpDisabled;
     }
     return session->pumpActive;

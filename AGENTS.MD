@@ -13,3 +13,4 @@
 13. Ensure BLE devices are re-advertised after disconnected.
 14. Author: H1M4W4R1
 15. Folders: `drivers/` - for peripheral-related code, `systems/` for low-level systems `operation/` for user-level handling (HMI expect UI), `ui/` for user interface
+16. Version tracking starts at `1.0.1`. For every user-facing firmware, BLE, or documentation change, automatically update `README.MD` current version and changelog using semantic versioning unless the user specifies an exact version. Keep changelog entries newest first.

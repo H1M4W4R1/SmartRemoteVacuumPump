@@ -4,12 +4,12 @@
 
 #include <operation/fw_controller_common_adaptive.h>
 
-bool fwControllerTargetAdaptivePoll(FwConfig *config, FwSession *session, int32_t pressureHpa)
+bool fwControllerCurrentAdaptivePoll(FwConfig *config, FwSession *session, int32_t pressureHpa)
 {
     assert(config != nullptr);
     assert(session != nullptr);
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
-    return fwControllerCommonAdaptiveTargetPoll(config, session, pressureHpa);
+    return fwControllerCommonAdaptiveCurrentPoll(config, session, pressureHpa);
 }

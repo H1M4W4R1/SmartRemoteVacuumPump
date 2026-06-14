@@ -202,10 +202,16 @@ private:
 
     bool writeMode(FwMode mode)
     {
+        bool ok = true;
         assert(g_config != nullptr);
-        assert(mode <= FW_MODE_TARGET_ADAPTIVE);
+        assert(g_session != nullptr);
+        assert(mode <= FW_MODE_CURRENT_ADAPTIVE);
         g_config->mode = mode;
-        return true;
+        if (((mode == FW_MODE_CURRENT_HYSTERESIS) || (mode == FW_MODE_CURRENT_ADAPTIVE))
+            && !g_session->pumpActive) {
+            ok = fwControllerCaptureCurrentPressure(g_session);
+        }
+        return ok;
     }
 
     bool writeInteger(int32_t intValue, bool boolValue)
@@ -213,7 +219,7 @@ private:
         assert(g_config != nullptr);
         assert(g_session != nullptr);
         if (m_id == BLE_WRITE_PUMP) {
-            return fwControllerSetPump(g_session, boolValue, true);
+            return fwControllerSetPumpCommand(g_config, g_session, boolValue);
         }
         if (m_id == BLE_WRITE_VALVE) {
             return fwControllerSetValve(g_session, boolValue);

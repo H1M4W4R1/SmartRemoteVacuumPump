@@ -9,6 +9,33 @@
 static uint32_t g_lastTickMs = 0UL;
 static uint32_t g_secondAccumulatorMs = 0UL;
 
+static bool fwControllerModeIsCurrent(FwMode mode)
+{
+    assert(mode >= FW_MODE_MANUAL);
+    assert(mode <= FW_MODE_CURRENT_ADAPTIVE);
+    return (mode == FW_MODE_CURRENT_HYSTERESIS) || (mode == FW_MODE_CURRENT_ADAPTIVE);
+}
+
+static bool fwControllerModeIsVirtualActive(FwMode mode)
+{
+    assert(mode >= FW_MODE_MANUAL);
+    assert(mode <= FW_MODE_CURRENT_ADAPTIVE);
+    return (mode == FW_MODE_TARGET_HYSTERESIS) || (mode == FW_MODE_TARGET_ADAPTIVE);
+}
+
+bool fwControllerCaptureCurrentPressure(FwSession *session)
+{
+    assert(session != nullptr);
+    assert((session == nullptr) || (session->currentPressureHpa > -2000L));
+    if (session == nullptr) {
+        return false;
+    }
+    session->currentHoldPressureHpa = session->currentPressureHpa;
+    session->currentHoldPressureValid = true;
+    Serial.printf("CTRL: current hold captured pressure_hPa=%ld\n", session->currentHoldPressureHpa);
+    return true;
+}
+
 bool fwControllerSetPump(FwSession *session, bool active, bool manual)
 {
     bool ok = false;
@@ -33,14 +60,44 @@ bool fwControllerSetPump(FwSession *session, bool active, bool manual)
     return fwControllerCommonApplyOutputs(session);
 }
 
+bool fwControllerSetPumpCommand(const FwConfig *config, FwSession *session, bool active)
+{
+    bool ok = false;
+    assert(config != nullptr);
+    assert(session != nullptr);
+    if ((config == nullptr) || (session == nullptr)) {
+        return false;
+    }
+    if (fwControllerModeIsCurrent(config->mode) && !active) {
+        ok = fwControllerCaptureCurrentPressure(session);
+        ok = fwControllerSetPump(session, false, false) && ok;
+        return ok;
+    }
+    if ((config->mode != FW_MODE_MANUAL) && active && !session->valveActive) {
+        Serial.println("CTRL: pump start blocked, valve unlocked");
+        return fwControllerSetPump(session, false, false);
+    }
+    return fwControllerSetPump(session, active, true);
+}
+
 bool fwControllerSetValve(FwSession *session, bool active)
 {
+    bool ok = false;
     assert(session != nullptr);
     assert((active == true) || (active == false));
     if (session == nullptr) {
         return false;
     }
     session->valveActive = active;
+    if (!active && session->pumpActive) {
+        session->pumpActive = false;
+        session->currentPumpingSeconds = 0UL;
+        ok = fwControllerCommonSetPumpDutyX1000(0L);
+        if (!ok) {
+            return false;
+        }
+        Serial.println("CTRL: pump hold, valve unlocked");
+    }
     Serial.printf("CTRL: valve=%u\n", active ? 1U : 0U);
     return fwControllerCommonApplyOutputs(session);
 }
@@ -79,8 +136,14 @@ static bool fwControllerAutomatic(FwConfig *config, FwSession *session, int32_t 
     if (config->mode == FW_MODE_TARGET_ADAPTIVE) {
         return fwControllerTargetAdaptivePoll(config, session, pressureHpa);
     }
+    if (config->mode == FW_MODE_CURRENT_ADAPTIVE) {
+        return fwControllerCurrentAdaptivePoll(config, session, pressureHpa);
+    }
     if (config->mode == FW_MODE_TARGET_HYSTERESIS) {
         return fwControllerTargetHysteresisPoll(config, session, pressureHpa);
+    }
+    if (config->mode == FW_MODE_CURRENT_HYSTERESIS) {
+        return fwControllerCurrentHysteresisPoll(config, session, pressureHpa);
     }
     if (config->mode == FW_MODE_TARGET_ONESHOT) {
         return fwControllerTargetOneshotPoll(config, session, pressureHpa);
@@ -146,7 +209,7 @@ static bool fwControllerRemotePumpActive(const FwConfig *config, const FwSession
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
-    if ((config->mode == FW_MODE_TARGET_HYSTERESIS) || (config->mode == FW_MODE_TARGET_ADAPTIVE)) {
+    if (fwControllerModeIsVirtualActive(config->mode)) {
         return !session->temporaryPumpDisabled;
     }
     return fwControllerManualRemotePumpActive(session);
@@ -164,7 +227,7 @@ bool fwControllerHandleRf(FwConfig *config, FwSession *session, SysRfButton butt
     if ((button == SYS_RF_BUTTON_A) && !config->pumpRemoteDisabled) {
         remotePumpActive = fwControllerRemotePumpActive(config, session);
         if (remotePumpActive) {
-            ok = fwControllerSetPump(session, false, true);
+            ok = fwControllerSetPumpCommand(config, session, false);
             Serial.println("RF: button A accepted, manual pump suspend");
             return ok;
         }
@@ -174,7 +237,7 @@ bool fwControllerHandleRf(FwConfig *config, FwSession *session, SysRfButton butt
         } else {
             Serial.println("RF: button A accepted, pump start");
         }
-        ok = fwControllerSetPump(session, true, true);
+        ok = fwControllerSetPumpCommand(config, session, true);
     }
     if ((button == SYS_RF_BUTTON_B) && !config->valveRemoteDisabled) {
         ok = fwControllerSetValve(session, !session->valveActive) && ok;

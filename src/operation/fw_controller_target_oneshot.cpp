@@ -13,6 +13,10 @@ bool fwControllerTargetOneshotPoll(FwConfig *config, FwSession *session, int32_t
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
+    ok = fwControllerCommonHoldIfValveUnlocked(session);
+    if (!ok || !session->valveActive) {
+        return ok;
+    }
     ok = fwControllerCommonSetPumpDutyX1000(session->pumpActive ? 1000L : 0L);
     if (!ok) {
         return false;

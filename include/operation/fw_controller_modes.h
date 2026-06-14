@@ -8,3 +8,5 @@ bool fwControllerManualRemotePumpActive(const FwSession *session);
 bool fwControllerTargetOneshotPoll(FwConfig *config, FwSession *session, int32_t pressureHpa);
 bool fwControllerTargetHysteresisPoll(FwConfig *config, FwSession *session, int32_t pressureHpa);
 bool fwControllerTargetAdaptivePoll(FwConfig *config, FwSession *session, int32_t pressureHpa);
+bool fwControllerCurrentHysteresisPoll(FwConfig *config, FwSession *session, int32_t pressureHpa);
+bool fwControllerCurrentAdaptivePoll(FwConfig *config, FwSession *session, int32_t pressureHpa);

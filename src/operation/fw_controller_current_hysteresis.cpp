@@ -4,7 +4,7 @@
 
 #include <operation/fw_controller_common.h>
 
-bool fwControllerTargetHysteresisPoll(FwConfig *config, FwSession *session, int32_t pressureHpa)
+bool fwControllerCurrentHysteresisPoll(FwConfig *config, FwSession *session, int32_t pressureHpa)
 {
     bool ok = false;
     bool reached = false;
@@ -18,22 +18,27 @@ bool fwControllerTargetHysteresisPoll(FwConfig *config, FwSession *session, int3
     if (!ok || !session->valveActive) {
         return ok;
     }
+    if (!session->currentHoldPressureValid) {
+        session->pumpActive = false;
+        ok = fwControllerCommonSetPumpDutyX1000(0L);
+        return fwControllerCommonApplyOutputs(session) && ok;
+    }
     ok = fwControllerCommonSetPumpDutyX1000(session->pumpActive ? 1000L : 0L);
     if (!ok) {
         return false;
     }
-    reached = fwControllerCommonPressureReached(config, pressureHpa);
+    reached = fwControllerCommonPressureReachedAt(config, pressureHpa, session->currentHoldPressureHpa);
     if (reached && session->pumpActive) {
         session->pumpActive = false;
         session->currentPumpingSeconds = 0UL;
-        Serial.printf("CTRL: target reached pressure_hPa=%ld\n", pressureHpa);
+        Serial.printf("CTRL: current target reached pressure_hPa=%ld\n", pressureHpa);
     }
-    restart = fwControllerCommonPressureBelowRestart(config, pressureHpa);
-    if (restart && !session->temporaryPumpDisabled) {
+    restart = fwControllerCommonPressureBelowRestartAt(config, pressureHpa, session->currentHoldPressureHpa);
+    if (restart) {
         if (!session->pumpActive) {
             session->currentPumpingSeconds = 0UL;
-            Serial.printf("CTRL: target_hysteresis restart pressure_hPa=%ld target_hPa=%ld deadzone_hPa=%ld\n",
-                pressureHpa, config->targetPressureHpa, config->pressureDeadzoneHpa);
+            Serial.printf("CTRL: current_hysteresis restart pressure_hPa=%ld hold_hPa=%ld deadzone_hPa=%ld\n",
+                pressureHpa, session->currentHoldPressureHpa, config->pressureDeadzoneHpa);
         }
         session->pumpActive = true;
     }

@@ -7,7 +7,7 @@ This project is a direct upgrade of previous one available <a href="https://gith
 Firmware controls a normally-open valve and three parallel 555-type pumps using cheap -100 to 100kPa pressure sensor as feedback.
 Pumps can be controlled using 433MHz ASK remote or using BLE.
 
-Current version: `1.0.2`
+Current version: `1.1.1`
 
 ## Controls
 
@@ -17,13 +17,17 @@ Button A controls the pump:
 - In manual mode, button A also locks the valve when starting the pump.
 - In automatic modes, button A does not change valve state.
 - In `target_hysteresis` and `target_adaptive`, button A follows the virtual controller state, so it suspends the controller even when the physical pump is currently idle at target pressure.
-- If the pump or virtual controller is running, button A stops it and marks the pump as temporarily disabled.
-- Pressing button A again manually reactivates the pump and clears temporary disable.
+- In `current_hysteresis` and `current_adaptive`, button A starts preload when the physical pump is off and captures the current pressure when stopping the pump.
+- In target modes, if the pump or virtual controller is running, button A stops it and marks the pump as temporarily disabled.
+- In target modes, pressing button A again manually reactivates the pump and clears temporary disable.
 
 Button B controls the valve:
 
 - Button B toggles the valve lock.
 - Button B is ignored when valve remote control is disabled.
+- Opening the valve stops the pump in every mode, including `manual`.
+- Automatic target and current modes only run the pump while the valve is locked.
+- Unlocking the valve while the pump is running immediately puts the pump on hold.
 
 ## Modes
 
@@ -34,6 +38,12 @@ Button B controls the valve:
 `target_hysteresis` stops pumping when target pressure is reached and restarts when pressure moves outside the configured deadzone. If the user manually disables the pump, the firmware waits for manual reactivation before continuing in `target_hysteresis`.
 
 `target_adaptive` uses PWM pump drive with an adaptive PID loop to hold the configured target pressure. It continuously estimates chamber response while pumping and leak/drift while idle, then adjusts pump duty at runtime for chambers that vary between usages.
+
+`current_hysteresis` works like `target_hysteresis`, but it uses the pressure captured when the pump is stopped over BLE or RF instead of the configured target pressure.
+
+`current_adaptive` works like `target_adaptive`, but it uses the pressure captured when the pump is stopped over BLE or RF instead of the configured target pressure.
+
+Current modes let the user preload the chamber to the desired pressure, stop the pump, and let firmware maintain that captured pressure while the valve remains locked. If the mode is selected while the pump is already stopped, the firmware captures the current pressure once.
 
 ## Calibration
 
@@ -50,7 +60,7 @@ Values are sent as text:
 - Boolean values: `0` or `1`
 - Time values: seconds integer, no unit suffix
 - Pressure values: hPa integer, no unit suffix
-- Mode values: `manual`, `target_hysteresis`, `target_oneshot`, or `target_adaptive`
+- Mode values: `manual`, `target_hysteresis`, `target_oneshot`, `target_adaptive`, `current_hysteresis`, or `current_adaptive`
 
 Each characteristic has a Characteristic User Description (`0x2901`) descriptor with the friendly name listed below. Each service also exposes a `Service Name` characteristic for debug tools.
 
@@ -130,11 +140,23 @@ pio run
 
 ## Versioning
 
-This project uses semantic versioning. The current released version is `1.0.2`.
+This project uses semantic versioning. The current released version is `1.1.1`.
 
 When firmware behavior, BLE values, or user-facing documentation changes, update both the current version above and the newest changelog entry in this file. Keep changelog entries newest first.
 
 ## Changelog
+
+### 1.1.1 - 2026-06-14
+
+- Documented valve safety for `manual` mode: opening the valve stops the pump in every mode.
+
+### 1.1.0 - 2026-06-14
+
+- Added `current_hysteresis` mode, which captures the current pressure on BLE/RF pump stop and maintains it with hysteresis.
+- Added `current_adaptive` mode, which captures the current pressure on BLE/RF pump stop and maintains it with adaptive PWM control.
+- Added automatic-mode valve safety: target and current modes hold the pump while the valve is unlocked.
+- Unlocking the valve while the pump is running now immediately puts the pump on hold.
+- Updated BLE mode values documentation with the new current modes.
 
 ### 1.0.2 - 2026-06-14
 

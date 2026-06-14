@@ -11,3 +11,6 @@ int32_t fwControllerCommonPumpDutyX1000(void);
 int32_t fwControllerCommonClampInt32(int32_t value, int32_t minimum, int32_t maximum);
 bool fwControllerCommonPressureReached(const FwConfig *config, int32_t pressureHpa);
 bool fwControllerCommonPressureBelowRestart(const FwConfig *config, int32_t pressureHpa);
+bool fwControllerCommonPressureReachedAt(const FwConfig *config, int32_t pressureHpa, int32_t targetHpa);
+bool fwControllerCommonPressureBelowRestartAt(const FwConfig *config, int32_t pressureHpa, int32_t targetHpa);
+bool fwControllerCommonHoldIfValveUnlocked(FwSession *session);

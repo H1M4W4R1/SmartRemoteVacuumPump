@@ -6,7 +6,9 @@ enum FwMode {
     FW_MODE_MANUAL = 0,
     FW_MODE_TARGET_HYSTERESIS = 1,
     FW_MODE_TARGET_ONESHOT = 2,
-    FW_MODE_TARGET_ADAPTIVE = 3
+    FW_MODE_TARGET_ADAPTIVE = 3,
+    FW_MODE_CURRENT_HYSTERESIS = 4,
+    FW_MODE_CURRENT_ADAPTIVE = 5
 };
 
 struct FwConfig {
@@ -36,6 +38,8 @@ struct FwSession {
     int32_t currentPressureHpa;
     int32_t minPressureHpa;
     int32_t maxPressureHpa;
+    int32_t currentHoldPressureHpa;
+    bool currentHoldPressureValid;
 };
 
 bool fwStateInit(FwConfig *config, FwSession *session);

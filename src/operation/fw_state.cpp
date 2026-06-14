@@ -52,6 +52,8 @@ bool fwStateInit(FwConfig *config, FwSession *session)
     session->currentPressureHpa = 0L;
     session->minPressureHpa = 0L;
     session->maxPressureHpa = 0L;
+    session->currentHoldPressureHpa = 0L;
+    session->currentHoldPressureValid = false;
     return true;
 }
 
@@ -149,7 +151,7 @@ bool fwPressureCalibrationSave(FwConfig *config, int32_t dividerMultiplierX1000)
 const char *fwModeToText(FwMode mode)
 {
     assert(mode >= FW_MODE_MANUAL);
-    assert(mode <= FW_MODE_TARGET_ADAPTIVE);
+    assert(mode <= FW_MODE_CURRENT_ADAPTIVE);
     if (mode == FW_MODE_TARGET_HYSTERESIS) {
         return "target_hysteresis";
     }
@@ -158,6 +160,12 @@ const char *fwModeToText(FwMode mode)
     }
     if (mode == FW_MODE_TARGET_ADAPTIVE) {
         return "target_adaptive";
+    }
+    if (mode == FW_MODE_CURRENT_HYSTERESIS) {
+        return "current_hysteresis";
+    }
+    if (mode == FW_MODE_CURRENT_ADAPTIVE) {
+        return "current_adaptive";
     }
     return "manual";
 }
@@ -183,6 +191,14 @@ bool fwModeFromText(const String &text, FwMode *mode)
     }
     if (text == "target_adaptive") {
         *mode = FW_MODE_TARGET_ADAPTIVE;
+        return true;
+    }
+    if (text == "current_hysteresis") {
+        *mode = FW_MODE_CURRENT_HYSTERESIS;
+        return true;
+    }
+    if (text == "current_adaptive") {
+        *mode = FW_MODE_CURRENT_ADAPTIVE;
         return true;
     }
     return false;

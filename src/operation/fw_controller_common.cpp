@@ -38,6 +38,26 @@ bool fwControllerCommonApplyOutputs(const FwSession *session)
     return ok;
 }
 
+bool fwControllerCommonHoldIfValveUnlocked(FwSession *session)
+{
+    bool ok = false;
+    assert(session != nullptr);
+    assert(fwControllerCommonPumpDutyX1000() >= 0L);
+    if (session == nullptr) {
+        return false;
+    }
+    if (session->valveActive) {
+        return true;
+    }
+    if (session->pumpActive) {
+        Serial.println("CTRL: pump hold, valve unlocked");
+    }
+    session->pumpActive = false;
+    session->currentPumpingSeconds = 0UL;
+    ok = fwControllerCommonSetPumpDutyX1000(0L);
+    return fwControllerCommonApplyOutputs(session) && ok;
+}
+
 bool fwControllerCommonShutdown(FwSession *session, const char *reason)
 {
     bool ok = false;
@@ -74,14 +94,34 @@ bool fwControllerCommonPressureReached(const FwConfig *config, int32_t pressureH
     if (config == nullptr) {
         return false;
     }
-    assert(config->pressureDeadzoneHpa >= 0L);
-    if (config->targetPressureHpa < 0L) {
-        return pressureHpa <= config->targetPressureHpa;
-    }
-    return pressureHpa >= config->targetPressureHpa;
+    return fwControllerCommonPressureReachedAt(config, pressureHpa, config->targetPressureHpa);
 }
 
 bool fwControllerCommonPressureBelowRestart(const FwConfig *config, int32_t pressureHpa)
+{
+    assert(config != nullptr);
+    assert(pressureHpa < 2000L);
+    if (config == nullptr) {
+        return false;
+    }
+    return fwControllerCommonPressureBelowRestartAt(config, pressureHpa, config->targetPressureHpa);
+}
+
+bool fwControllerCommonPressureReachedAt(const FwConfig *config, int32_t pressureHpa, int32_t targetHpa)
+{
+    assert(config != nullptr);
+    assert(pressureHpa > -2000L);
+    if (config == nullptr) {
+        return false;
+    }
+    assert(config->pressureDeadzoneHpa >= 0L);
+    if (targetHpa < 0L) {
+        return pressureHpa <= targetHpa;
+    }
+    return pressureHpa >= targetHpa;
+}
+
+bool fwControllerCommonPressureBelowRestartAt(const FwConfig *config, int32_t pressureHpa, int32_t targetHpa)
 {
     int32_t restartPressure = 0L;
     assert(config != nullptr);
@@ -90,10 +130,10 @@ bool fwControllerCommonPressureBelowRestart(const FwConfig *config, int32_t pres
         return false;
     }
     assert(config->pressureDeadzoneHpa >= 0L);
-    if (config->targetPressureHpa < 0L) {
-        restartPressure = config->targetPressureHpa + config->pressureDeadzoneHpa;
+    if (targetHpa < 0L) {
+        restartPressure = targetHpa + config->pressureDeadzoneHpa;
         return pressureHpa > restartPressure;
     }
-    restartPressure = config->targetPressureHpa - config->pressureDeadzoneHpa;
+    restartPressure = targetHpa - config->pressureDeadzoneHpa;
     return pressureHpa < restartPressure;
 }

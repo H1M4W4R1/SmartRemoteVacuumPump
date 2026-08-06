@@ -169,34 +169,34 @@ const char *fwModeToText(FwMode mode)
     return "manual";
 }
 
-bool fwModeFromText(const String &text, FwMode *mode)
+bool fwModeFromText(const char *text, FwMode *mode)
 {
+    assert(text != nullptr);
     assert(mode != nullptr);
-    assert(text.length() < 32U);
-    if (mode == nullptr) {
+    if ((text == nullptr) || (mode == nullptr)) {
         return false;
     }
-    if (text == "manual") {
+    if (strcmp(text, "manual") == 0) {
         *mode = FW_MODE_MANUAL;
         return true;
     }
-    if (text == "target_hysteresis") {
+    if ((strcmp(text, "target_hysteresis") == 0) || (strcmp(text, "automatic") == 0)) {
         *mode = FW_MODE_TARGET_HYSTERESIS;
         return true;
     }
-    if (text == "target_oneshot") {
+    if (strcmp(text, "target_oneshot") == 0) {
         *mode = FW_MODE_TARGET_ONESHOT;
         return true;
     }
-    if (text == "target_adaptive") {
+    if (strcmp(text, "target_adaptive") == 0) {
         *mode = FW_MODE_TARGET_ADAPTIVE;
         return true;
     }
-    if (text == "current_hysteresis") {
+    if (strcmp(text, "current_hysteresis") == 0) {
         *mode = FW_MODE_CURRENT_HYSTERESIS;
         return true;
     }
-    if (text == "current_adaptive") {
+    if (strcmp(text, "current_adaptive") == 0) {
         *mode = FW_MODE_CURRENT_ADAPTIVE;
         return true;
     }

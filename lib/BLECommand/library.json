@@ -1,0 +1,10 @@
+{
+  "name": "BLECommand",
+  "version": "0.2.0",
+  "description": "Arduino ESP32 BLE command transport with queued 20 Hz TX, RX, and NX notifications.",
+  "keywords": ["ble", "bluetooth", "esp32", "serial", "command"],
+  "authors": [{"name": "H1M4W4R1"}],
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "build": {"srcDir": ".", "includeDir": "."}
+}

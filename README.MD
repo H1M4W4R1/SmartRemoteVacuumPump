@@ -7,7 +7,7 @@ This project is a direct upgrade of previous one available <a href="https://gith
 Firmware controls a normally-open valve and three parallel 555-type pumps using cheap -100 to 100kPa pressure sensor as feedback.
 Pumps can be controlled using 433MHz ASK remote or using BLE.
 
-Current version: `1.2.0`
+Current version: `2.0.3`
 
 ## Controls
 
@@ -55,48 +55,73 @@ If no calibration exists in NVS, the firmware attempts auto-calibration on boot.
 
 BLE device name: `OST-RSP`
 
-Values are sent as text:
+The firmware uses BLECommand: one service with the three command endpoints below. The legacy Session and Configuration services are removed.
 
-- Boolean values: `0` or `1`
-- Time values: seconds integer, no unit suffix
-- Pressure values: hPa integer, no unit suffix
-- Mode values: `manual`, `target_hysteresis`, `target_oneshot`, `target_adaptive`, `current_hysteresis`, or `current_adaptive`
+| Endpoint | Access | UUID | Purpose |
+|----------|--------|------|---------|
+| TX | Write, Write Without Response | `40300002-0023-4bd4-bbd5-a6920e4c5653` | Commands sent to the device |
+| RX | Read, Notify | `40300003-0023-4bd4-bbd5-a6920e4c5653` | Command replies |
+| NX | Notify | `40300004-0023-4bd4-bbd5-a6920e4c5653` | Live state events |
 
-Each characteristic has a Characteristic User Description (`0x2901`) descriptor with the friendly name listed below. Each service also exposes a `Service Name` characteristic for debug tools.
+Service UUID: `40300001-0023-4bd4-bbd5-a6920e4c5653`
 
-### Session Service
+Every endpoint value is ASCII. Subscribe to RX for replies and NX for live events. BLECommand also exposes a read-only `Service Name` metadata characteristic at UUID `0x00FF`.
 
-Service UUID: `ae615001-0000-4000-8000-0d670255c8ef`
+Write TX packets in the form `Command:data;`. Commands are case-insensitive; the documented PascalCase form is preferred. BLE writes may split a packet or include multiple packets. A command without data queries its current value, for example `Mode;` returns `Mode:manual;`. A successful command with data returns `OK;`.
 
-| Name                 | Access | UUID                                   | Format          |
-|----------------------|--------|----------------------------------------|-----------------|
-| Service Name         | R      | `ae615001-00ff-4000-8000-0d670255c8ef` | `Session`       |
-| Pump Active          | RWN    | `ae615001-0001-4000-8000-0d670255c8ef` | bool integer    |
-| Valve Active         | RWN    | `ae615001-0002-4000-8000-0d670255c8ef` | bool integer    |
-| Current Session Time | RN     | `ae615001-0003-4000-8000-0d670255c8ef` | seconds integer |
-| Current Pumping Time | RN     | `ae615001-0004-4000-8000-0d670255c8ef` | seconds integer |
-| Last Session Time    | RN     | `ae615001-0005-4000-8000-0d670255c8ef` | seconds integer |
-| Total Session Time   | RN     | `ae615001-0006-4000-8000-0d670255c8ef` | seconds integer |
-| Minimum Pressure     | RN     | `ae615001-0007-4000-8000-0d670255c8ef` | hPa integer     |
-| Maximum Pressure     | RN     | `ae615001-0008-4000-8000-0d670255c8ef` | hPa integer     |
-| Current Pressure     | RWN    | `ae615001-0009-4000-8000-0d670255c8ef` | hPa integer     |
+`automatic` is accepted as an alias for `target_hysteresis`; queries always return the canonical mode name. Boolean values are `0` or `1`, time values are whole seconds, and pressure values are whole hPa.
 
-### Configuration Service
+| Command | Set form | Read reply | Accepted value |
+|---------|----------|------------|----------------|
+| `Mode` | `Mode:automatic;` | `Mode:[mode];` | `manual`, `automatic`, `target_hysteresis`, `target_oneshot`, `target_adaptive`, `current_hysteresis`, or `current_adaptive` |
+| `Pump` | `Pump:1;` | `Pump:[0\|1];` | `0` or `1` |
+| `Valve` | `Valve:1;` | `Valve:[0\|1];` | `0` or `1` |
+| `CurrentPressure` | `CurrentPressure:-50000;` | `CurrentPressure:[hPa];` | Signed hPa integer |
+| `MaxSession` | `MaxSession:28800;` | `MaxSession:[seconds];` | Non-negative seconds integer |
+| `MaxPumping` | `MaxPumping:1500;` | `MaxPumping:[seconds];` | Non-negative seconds integer |
+| `PumpRemoteDisabled` | `PumpRemoteDisabled:1;` | `PumpRemoteDisabled:[0\|1];` | `0` or `1` |
+| `ValveRemoteDisabled` | `ValveRemoteDisabled:1;` | `ValveRemoteDisabled:[0\|1];` | `0` or `1` |
+| `TargetPressure` | `TargetPressure:-50000;` | `TargetPressure:[hPa];` | Signed hPa integer |
+| `DefaultOn` | `DefaultOn:1;` | `DefaultOn:[0\|1];` | `0` or `1` |
+| `CalibrationActive` | `CalibrationActive:1;` | `CalibrationActive:[0\|1];` | `0` or `1` |
+| `PressureDeadzone` | `PressureDeadzone:50;` | `PressureDeadzone:[hPa];` | Integer `0` to `1000` hPa |
+| `SessionTime` | — | `SessionTime:[seconds];` | Read only |
+| `PumpTime` | — | `PumpTime:[seconds];` | Read only |
+| `LastSessionTime` | — | `LastSessionTime:[seconds];` | Read only |
+| `TotalSessionTime` | — | `TotalSessionTime:[seconds];` | Read only |
+| `MinimumPressure` | — | `MinimumPressure:[hPa];` | Read only |
+| `MaximumPressure` | — | `MaximumPressure:[hPa];` | Read only |
 
-Service UUID: `ae615002-0000-4000-8000-0d670255c8ef`
+While connected, NX emits an individual event only when one of these live values changes:
 
-| Name                  | Access | UUID                                   | Format                      |
-|-----------------------|--------|----------------------------------------|-----------------------------|
-| Service Name          | R      | `ae615002-00ff-4000-8000-0d670255c8ef` | `Configuration`             |
-| Maximum Session Time  | RW     | `ae615002-0001-4000-8000-0d670255c8ef` | seconds integer             |
-| Maximum Pumping Time  | RW     | `ae615002-0002-4000-8000-0d670255c8ef` | seconds integer             |
-| Mode                  | RW     | `ae615002-0003-4000-8000-0d670255c8ef` | string                      |
-| Pump Remote Disabled  | RW     | `ae615002-0004-4000-8000-0d670255c8ef` | bool integer                |
-| Valve Remote Disabled | RW     | `ae615002-0005-4000-8000-0d670255c8ef` | bool integer                |
-| Target Pressure       | RW     | `ae615002-0006-4000-8000-0d670255c8ef` | hPa integer                 |
-| Default On            | RW     | `ae615002-0007-4000-8000-0d670255c8ef` | bool integer, stored in NVS |
-| Calibration Active    | RWN    | `ae615002-0008-4000-8000-0d670255c8ef` | bool integer                |
-| Pressure Deadzone     | RWN    | `ae615002-0009-4000-8000-0d670255c8ef` | hPa integer, stored in NVS  |
+```text
+Pump:[0|1];
+Valve:[0|1];
+SessionTime:[seconds];
+PumpTime:[seconds];
+LastSessionTime:[seconds];
+TotalSessionTime:[seconds];
+CurrentPressure:[hPa];
+MinimumPressure:[hPa];
+MaximumPressure:[hPa];
+```
+
+Configuration values are never sent through NX. Query their commands to receive their current values through RX.
+
+### Errors
+
+All errors are returned through RX as `ERR:error_type;`.
+
+| Error type | Meaning |
+|------------|---------|
+| `invalid_arguments` | The command has an unsupported number of data fields. |
+| `invalid_value` | The value is not valid for the command. |
+| `out_of_range` | A numeric value is outside the allowed range. |
+| `operation_failed` | The requested controller or persistent-storage action failed. |
+| `unknown_command` | The BLECommand transport received an unregistered command name. |
+| `packet_too_long` | The BLECommand transport discarded a packet above its fixed 256-byte limit. |
+
+BLECommand accepts packets up to 256 bytes, including the terminating semicolon, with up to 16 data fields.
 
 ## Pinout
 
@@ -134,11 +159,22 @@ pio run
 
 ## Versioning
 
-This project uses semantic versioning. The current released version is `1.2.0`.
+This project uses semantic versioning. The current released version is `2.0.4`.
 
 When firmware behavior, BLE values, or user-facing documentation changes, update both the current version above and the newest changelog entry in this file. Keep changelog entries newest first.
 
 ## Changelog
+
+### 2.0.4 - 2026-08-06
+
+- Replaced periodic NX `Status` and `Config` batches with individual live-value events emitted only when a value changes.
+- Stopped sending configuration values through NX; configuration queries return their values through RX.
+
+### 2.0.0 - 2026-08-06
+
+- Replaced the two-service, multi-characteristic BLE interface with the BLECommand single-service TX/RX/NX command transport.
+- Added command replies (`OK;`), queries, documented error replies (`ERR:error_type;`), and one-second NX `Status` and `Config` events.
+- Added `automatic` as a BLE command alias for `target_hysteresis`.
 
 ### 1.2.0 - 2026-06-14
 

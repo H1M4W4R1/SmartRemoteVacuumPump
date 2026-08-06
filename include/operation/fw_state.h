@@ -48,4 +48,4 @@ bool fwConfigRequestSave(FwConfig *config);
 bool fwConfigSaveIfPending(FwConfig *config);
 bool fwPressureCalibrationSave(FwConfig *config, int32_t dividerMultiplierX1000);
 const char *fwModeToText(FwMode mode);
-bool fwModeFromText(const String &text, FwMode *mode);
+bool fwModeFromText(const char *text, FwMode *mode);

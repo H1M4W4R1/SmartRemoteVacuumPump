@@ -1,448 +1,648 @@
 #include <systems/sys_ble.h>
 
-#include <BLE2902.h>
-#include <BLEDevice.h>
-#include <BLEDescriptor.h>
-#include <BLEServer.h>
+#include <BluetoothCommandAPI.h>
 #include <assert.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <operation/fw_config.h>
 #include <operation/fw_controller.h>
 
-#define BLE_UUID_SESSION_SERVICE "ae615001-0000-4000-8000-0d670255c8ef"
-#define BLE_UUID_CONFIG_SERVICE "ae615002-0000-4000-8000-0d670255c8ef"
-#define BLE_UUID_SESSION_SERVICE_NAME "ae615001-00ff-4000-8000-0d670255c8ef"
-#define BLE_UUID_CONFIG_SERVICE_NAME "ae615002-00ff-4000-8000-0d670255c8ef"
-#define BLE_UUID_SESSION_PUMP "ae615001-0001-4000-8000-0d670255c8ef"
-#define BLE_UUID_SESSION_VALVE "ae615001-0002-4000-8000-0d670255c8ef"
-#define BLE_UUID_SESSION_TIME "ae615001-0003-4000-8000-0d670255c8ef"
-#define BLE_UUID_PUMP_TIME "ae615001-0004-4000-8000-0d670255c8ef"
-#define BLE_UUID_LAST_TIME "ae615001-0005-4000-8000-0d670255c8ef"
-#define BLE_UUID_TOTAL_TIME "ae615001-0006-4000-8000-0d670255c8ef"
-#define BLE_UUID_MIN_PRESSURE "ae615001-0007-4000-8000-0d670255c8ef"
-#define BLE_UUID_MAX_PRESSURE "ae615001-0008-4000-8000-0d670255c8ef"
-#define BLE_UUID_CURRENT_PRESSURE "ae615001-0009-4000-8000-0d670255c8ef"
-#define BLE_UUID_MAX_SESSION "ae615002-0001-4000-8000-0d670255c8ef"
-#define BLE_UUID_MAX_PUMPING "ae615002-0002-4000-8000-0d670255c8ef"
-#define BLE_UUID_MODE "ae615002-0003-4000-8000-0d670255c8ef"
-#define BLE_UUID_PUMP_LOCK "ae615002-0004-4000-8000-0d670255c8ef"
-#define BLE_UUID_VALVE_LOCK "ae615002-0005-4000-8000-0d670255c8ef"
-#define BLE_UUID_TARGET "ae615002-0006-4000-8000-0d670255c8ef"
-#define BLE_UUID_DEFAULT_ON "ae615002-0007-4000-8000-0d670255c8ef"
-#define BLE_UUID_CALIBRATION "ae615002-0008-4000-8000-0d670255c8ef"
-#define BLE_UUID_DEADZONE "ae615002-0009-4000-8000-0d670255c8ef"
-
-#define BLE_SESSION_HANDLE_COUNT 48U
-#define BLE_CONFIG_HANDLE_COUNT 40U
-
-enum BleWriteId {
-    BLE_WRITE_PUMP = 1,
-    BLE_WRITE_VALVE = 2,
-    BLE_WRITE_MAX_SESSION = 3,
-    BLE_WRITE_MAX_PUMPING = 4,
-    BLE_WRITE_MODE = 5,
-    BLE_WRITE_PUMP_LOCK = 6,
-    BLE_WRITE_VALVE_LOCK = 7,
-    BLE_WRITE_TARGET = 8,
-    BLE_WRITE_DEFAULT_ON = 9,
-    BLE_WRITE_CALIBRATION = 10,
-    BLE_WRITE_DEADZONE = 11,
-    BLE_WRITE_CURRENT_PRESSURE = 12
-};
-
 static FwConfig *g_config = nullptr;
 static FwSession *g_session = nullptr;
-static BLEServer *g_server = nullptr;
-static BLECharacteristic *g_pump = nullptr;
-static BLECharacteristic *g_valve = nullptr;
-static BLECharacteristic *g_sessionTime = nullptr;
-static BLECharacteristic *g_pumpTime = nullptr;
-static BLECharacteristic *g_lastTime = nullptr;
-static BLECharacteristic *g_totalTime = nullptr;
-static BLECharacteristic *g_currentPressure = nullptr;
-static BLECharacteristic *g_minPressure = nullptr;
-static BLECharacteristic *g_maxPressure = nullptr;
-static BLECharacteristic *g_maxSession = nullptr;
-static BLECharacteristic *g_maxPumping = nullptr;
-static BLECharacteristic *g_mode = nullptr;
-static BLECharacteristic *g_pumpLock = nullptr;
-static BLECharacteristic *g_valveLock = nullptr;
-static BLECharacteristic *g_target = nullptr;
-static BLECharacteristic *g_defaultOn = nullptr;
-static BLECharacteristic *g_calibration = nullptr;
-static BLECharacteristic *g_deadzone = nullptr;
-static bool g_connected = false;
 static bool g_started = false;
-static uint32_t g_lastNotifyMs = 0UL;
 
-static String bleReadText(BLECharacteristic *characteristic)
-{
-    assert(characteristic != nullptr);
-    assert(g_config != nullptr);
-    if (characteristic == nullptr) {
-        return "";
-    }
-    return characteristic->getValue();
-}
+struct BleStatus {
+    bool pumpActive;
+    bool valveActive;
+    uint32_t currentSessionSeconds;
+    uint32_t currentPumpingSeconds;
+    uint32_t lastSessionSeconds;
+    uint32_t totalSessionSeconds;
+    int32_t currentPressureHpa;
+    int32_t minPressureHpa;
+    int32_t maxPressureHpa;
+};
 
-static bool bleParseBool(const String &text, bool *value)
+static BleStatus g_lastStatus = {};
+
+static bool bleReply(const char *command, const char *value)
 {
+    const char *data[] = {value};
+    bluetooth_command_result_t result = bluetooth_command_result_ok;
+    assert(command != nullptr);
     assert(value != nullptr);
-    assert(text.length() < 16U);
-    if (value == nullptr) {
+    if ((command == nullptr) || (value == nullptr)) {
         return false;
     }
-    if (text == "0") {
+    result = BluetoothCommandAPI::send(command, data, 1U);
+    return result == bluetooth_command_result_ok;
+}
+
+static bool bleReplyOk(void)
+{
+    bluetooth_command_result_t result = BluetoothCommandAPI::send("OK");
+    assert(g_started);
+    return result == bluetooth_command_result_ok;
+}
+
+static bool bleReplyError(const char *error)
+{
+    bool ok = false;
+    assert(error != nullptr);
+    assert(g_started);
+    ok = bleReply("ERR", error);
+    return ok;
+}
+
+static bool bleReplyInt(const char *command, int32_t value)
+{
+    char text[16] = {};
+    int written = 0;
+    assert(command != nullptr);
+    assert(g_started);
+    written = snprintf(text, sizeof(text), "%ld", (long)value);
+    if ((written < 0) || ((size_t)written >= sizeof(text))) {
+        return false;
+    }
+    return bleReply(command, text);
+}
+
+static bool bleReplyUint(const char *command, uint32_t value)
+{
+    char text[16] = {};
+    int written = 0;
+    assert(command != nullptr);
+    assert(g_started);
+    written = snprintf(text, sizeof(text), "%lu", (unsigned long)value);
+    if ((written < 0) || ((size_t)written >= sizeof(text))) {
+        return false;
+    }
+    return bleReply(command, text);
+}
+
+static bool bleReplyBool(const char *command, bool value)
+{
+    assert(command != nullptr);
+    assert(g_started);
+    return bleReply(command, value ? "1" : "0");
+}
+
+static bool bleNotify(const char *command, const char *value)
+{
+    const char *data[] = {value};
+    bluetooth_command_result_t result = bluetooth_command_result_ok;
+    assert(command != nullptr);
+    assert(value != nullptr);
+    assert(g_started);
+    if ((command == nullptr) || (value == nullptr) || !g_started) {
+        return false;
+    }
+    result = BluetoothCommandAPI::notify(command, data, 1U);
+    return result == bluetooth_command_result_ok;
+}
+
+static bool bleNotifyInt(const char *command, int32_t value)
+{
+    char text[16] = {};
+    int written = 0;
+    assert(command != nullptr);
+    assert(g_started);
+    written = snprintf(text, sizeof(text), "%ld", (long)value);
+    if ((written < 0) || ((size_t)written >= sizeof(text))) {
+        return false;
+    }
+    return bleNotify(command, text);
+}
+
+static bool bleNotifyUint(const char *command, uint32_t value)
+{
+    char text[16] = {};
+    int written = 0;
+    assert(command != nullptr);
+    assert(g_started);
+    written = snprintf(text, sizeof(text), "%lu", (unsigned long)value);
+    if ((written < 0) || ((size_t)written >= sizeof(text))) {
+        return false;
+    }
+    return bleNotify(command, text);
+}
+
+static bool bleNotifyBool(const char *command, bool value)
+{
+    assert(command != nullptr);
+    assert(g_started);
+    return bleNotify(command, value ? "1" : "0");
+}
+
+static bool bleHasNoData(const char *const *data)
+{
+    assert(data != nullptr);
+    assert(g_started);
+    return (data != nullptr) && (data[0] == nullptr);
+}
+
+static bool bleHasOneData(const char *const *data)
+{
+    assert(data != nullptr);
+    assert(g_started);
+    return (data != nullptr) && (data[0] != nullptr) && (data[1] == nullptr);
+}
+
+static bool bleParseBool(const char *text, bool *value)
+{
+    assert(text != nullptr);
+    assert(value != nullptr);
+    if ((text == nullptr) || (value == nullptr)) {
+        return false;
+    }
+    if (strcmp(text, "0") == 0) {
         *value = false;
         return true;
     }
-    if (text == "1") {
+    if (strcmp(text, "1") == 0) {
         *value = true;
         return true;
     }
     return false;
 }
 
-static bool bleParseInt32(const String &text, int32_t *value)
+static bool bleParseInt32(const char *text, int32_t *value)
 {
-    char *endPtr = nullptr;
+    char *end = nullptr;
     long parsed = 0L;
+    assert(text != nullptr);
     assert(value != nullptr);
-    assert(text.length() < 24U);
-    if ((value == nullptr) || (text.length() >= 24U)) {
+    if ((text == nullptr) || (value == nullptr) || (strlen(text) >= 16U)) {
         return false;
     }
-    parsed = strtol(text.c_str(), &endPtr, 10);
-    if ((endPtr == nullptr) || (*endPtr != '\0')) {
+    parsed = strtol(text, &end, 10);
+    if ((end == text) || (end == nullptr) || (*end != '\0') || (parsed < INT32_MIN) || (parsed > INT32_MAX)) {
         return false;
     }
     *value = (int32_t)parsed;
     return true;
 }
 
-static bool bleSet(BLECharacteristic *characteristic, const String &value, bool notify)
+static void bleSendError(const char *error)
 {
-    assert(characteristic != nullptr);
-    assert(value.length() < 64U);
-    if (characteristic == nullptr) {
-        return false;
+    bool ok = false;
+    assert(error != nullptr);
+    assert(g_started);
+    ok = bleReplyError(error);
+    if (!ok) {
+        Serial.println("BLE: reply queue full");
     }
-    characteristic->setValue(value.c_str());
-    if (notify) {
-        characteristic->notify();
-    }
-    return true;
 }
 
-class BleServerCallbacks final : public BLEServerCallbacks {
-    void onConnect(BLEServer *server) override
-    {
-        assert(server != nullptr);
-        assert(g_server != nullptr);
-        g_connected = true;
-        Serial.println("BLE: connected");
-    }
-
-    void onDisconnect(BLEServer *server) override
-    {
-        assert(server != nullptr);
-        assert(g_server != nullptr);
-        g_connected = false;
-        Serial.println("BLE: disconnected, advertising restarted");
-        server->startAdvertising();
-    }
-};
-
-class BleWriteCallbacks final : public BLECharacteristicCallbacks {
-public:
-    explicit BleWriteCallbacks(BleWriteId id) : m_id(id) {}
-
-    void onWrite(BLECharacteristic *characteristic) override
-    {
-        bool ok = false;
-        assert(characteristic != nullptr);
-        assert(g_config != nullptr);
-        if ((characteristic == nullptr) || (g_config == nullptr) || (g_session == nullptr)) {
-            return;
-        }
-        ok = handleWrite(characteristic);
-        Serial.printf("BLE: write id=%d ok=%u value=%s\n",
-            (int)m_id, ok ? 1U : 0U, bleReadText(characteristic).c_str());
-    }
-
-private:
-    BleWriteId m_id;
-
-    bool handleWrite(BLECharacteristic *characteristic)
-    {
-        String text = bleReadText(characteristic);
-        bool boolValue = false;
-        int32_t intValue = 0L;
-        FwMode mode = FW_MODE_MANUAL;
-        assert(characteristic != nullptr);
-        assert(text.length() < 64U);
-        if (m_id == BLE_WRITE_MODE) {
-            return fwModeFromText(text, &mode) && writeMode(mode);
-        }
-        if (!bleParseInt32(text, &intValue)) {
-            return false;
-        }
-        if ((m_id == BLE_WRITE_PUMP) || (m_id == BLE_WRITE_VALVE) || (m_id == BLE_WRITE_PUMP_LOCK)
-            || (m_id == BLE_WRITE_VALVE_LOCK) || (m_id == BLE_WRITE_DEFAULT_ON)
-            || (m_id == BLE_WRITE_CALIBRATION)) {
-            if (!bleParseBool(text, &boolValue)) {
-                return false;
-            }
-        }
-        return writeInteger(intValue, boolValue);
-    }
-
-    bool writeMode(FwMode mode)
-    {
-        bool ok = true;
-        assert(g_config != nullptr);
-        assert(g_session != nullptr);
-        assert(mode <= FW_MODE_CURRENT_ADAPTIVE);
-        g_config->mode = mode;
-        if (((mode == FW_MODE_CURRENT_HYSTERESIS) || (mode == FW_MODE_CURRENT_ADAPTIVE))
-            && !g_session->pumpActive) {
-            ok = fwControllerCaptureCurrentPressure(g_session);
-        }
-        return ok;
-    }
-
-    bool writeInteger(int32_t intValue, bool boolValue)
-    {
-        assert(g_config != nullptr);
-        assert(g_session != nullptr);
-        if (m_id == BLE_WRITE_PUMP) {
-            return fwControllerSetPumpCommand(g_config, g_session, boolValue);
-        }
-        if (m_id == BLE_WRITE_VALVE) {
-            return fwControllerSetValve(g_session, boolValue);
-        }
-        if (m_id == BLE_WRITE_CURRENT_PRESSURE) {
-            g_session->currentPressureHpa = intValue;
-            return true;
-        }
-        if (m_id == BLE_WRITE_MAX_SESSION) {
-            g_config->maxSessionSeconds = (uint32_t)intValue;
-        }
-        if (m_id == BLE_WRITE_MAX_PUMPING) {
-            g_config->maxPumpingSeconds = (uint32_t)intValue;
-        }
-        return writeConfigInteger(intValue, boolValue);
-    }
-
-    bool writeConfigInteger(int32_t intValue, bool boolValue)
-    {
-        assert(g_config != nullptr);
-        assert(g_session != nullptr);
-        if (m_id == BLE_WRITE_PUMP_LOCK) {
-            g_config->pumpRemoteDisabled = boolValue;
-        }
-        if (m_id == BLE_WRITE_VALVE_LOCK) {
-            g_config->valveRemoteDisabled = boolValue;
-        }
-        if (m_id == BLE_WRITE_TARGET) {
-            g_config->targetPressureHpa = intValue;
-        }
-        if (m_id == BLE_WRITE_DEFAULT_ON) {
-            g_config->defaultOn = boolValue;
-            return fwConfigRequestSave(g_config);
-        }
-        if (m_id == BLE_WRITE_CALIBRATION) {
-            g_config->calibrationActive = boolValue;
-        }
-        if (m_id == BLE_WRITE_DEADZONE) {
-            if ((intValue < FW_MIN_PRESSURE_DEADZONE_HPA) || (intValue > FW_MAX_PRESSURE_DEADZONE_HPA)) {
-                return false;
-            }
-            g_config->pressureDeadzoneHpa = intValue;
-            return fwConfigRequestSave(g_config);
-        }
-        return true;
-    }
-};
-
-static bool bleAddCud(BLECharacteristic *characteristic, const char *name)
+static void bleSendOk(void)
 {
-    BLEDescriptor *description = nullptr;
-    assert(characteristic != nullptr);
-    assert(name != nullptr);
-    if ((characteristic == nullptr) || (name == nullptr)) {
-        return false;
-    }
-    description = new BLEDescriptor(BLEUUID((uint16_t)0x2901), 48U);
-    if (description == nullptr) {
-        return false;
-    }
-    description->setAccessPermissions(ESP_GATT_PERM_READ);
-    description->setValue(String(name));
-    characteristic->addDescriptor(description);
-    return true;
-}
-
-static BLECharacteristic *bleCreate(BLEService *service, const char *uuid, uint32_t props, const char *name)
-{
-    BLECharacteristic *characteristic = nullptr;
-    bool hasClientConfig = false;
-    assert(service != nullptr);
-    assert(uuid != nullptr);
-    assert(name != nullptr);
-    if ((service == nullptr) || (uuid == nullptr) || (name == nullptr)) {
-        return nullptr;
-    }
-    characteristic = service->createCharacteristic(uuid, props);
-    if (characteristic != nullptr) {
-        if (!bleAddCud(characteristic, name)) {
-            return nullptr;
-        }
-        hasClientConfig = ((props & BLECharacteristic::PROPERTY_NOTIFY) != 0U)
-            || ((props & BLECharacteristic::PROPERTY_INDICATE) != 0U);
-        if (hasClientConfig) {
-            characteristic->addDescriptor(new BLE2902());
-        }
-    }
-    return characteristic;
-}
-
-static bool bleCreateServiceName(BLEService *service, const char *uuid, const char *name)
-{
-    BLECharacteristic *characteristic = nullptr;
-    assert(service != nullptr);
-    assert(uuid != nullptr);
-    if ((service == nullptr) || (uuid == nullptr) || (name == nullptr)) {
-        return false;
-    }
-    characteristic = bleCreate(service, uuid, BLECharacteristic::PROPERTY_READ, "Service Name");
-    if (characteristic == nullptr) {
-        return false;
-    }
-    characteristic->setValue(name);
-    return true;
-}
-
-static bool bleCreateSession(BLEService *service)
-{
-    uint32_t rn = BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY;
-    uint32_t rwn = rn | BLECharacteristic::PROPERTY_WRITE;
-    assert(service != nullptr);
-    assert(g_server != nullptr);
-    if (service == nullptr) {
-        return false;
-    }
-    if (!bleCreateServiceName(service, BLE_UUID_SESSION_SERVICE_NAME, "Session")) {
-        return false;
-    }
-    g_pump = bleCreate(service, BLE_UUID_SESSION_PUMP, rwn, "Pump Active");
-    g_valve = bleCreate(service, BLE_UUID_SESSION_VALVE, rwn, "Valve Active");
-    g_sessionTime = bleCreate(service, BLE_UUID_SESSION_TIME, rn, "Current Session Time");
-    g_pumpTime = bleCreate(service, BLE_UUID_PUMP_TIME, rn, "Current Pumping Time");
-    g_lastTime = bleCreate(service, BLE_UUID_LAST_TIME, rn, "Last Session Time");
-    g_totalTime = bleCreate(service, BLE_UUID_TOTAL_TIME, rn, "Total Session Time");
-    g_currentPressure = bleCreate(service, BLE_UUID_CURRENT_PRESSURE, rwn, "Current Pressure");
-    g_minPressure = bleCreate(service, BLE_UUID_MIN_PRESSURE, rn, "Minimum Pressure");
-    g_maxPressure = bleCreate(service, BLE_UUID_MAX_PRESSURE, rn, "Maximum Pressure");
-    if ((g_pump == nullptr) || (g_valve == nullptr) || (g_currentPressure == nullptr)
-        || (g_maxPressure == nullptr)) {
-        return false;
-    }
-    g_pump->setCallbacks(new BleWriteCallbacks(BLE_WRITE_PUMP));
-    g_valve->setCallbacks(new BleWriteCallbacks(BLE_WRITE_VALVE));
-    g_currentPressure->setCallbacks(new BleWriteCallbacks(BLE_WRITE_CURRENT_PRESSURE));
-    return g_maxPressure != nullptr;
-}
-
-static bool bleCreateConfig(BLEService *service)
-{
-    uint32_t rw = BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE;
-    uint32_t rwn = rw | BLECharacteristic::PROPERTY_NOTIFY;
-    assert(service != nullptr);
+    bool ok = false;
+    assert(g_started);
     assert(g_config != nullptr);
-    if (service == nullptr) {
-        return false;
+    ok = bleReplyOk();
+    if (!ok) {
+        Serial.println("BLE: reply queue full");
     }
-    if (!bleCreateServiceName(service, BLE_UUID_CONFIG_SERVICE_NAME, "Configuration")) {
-        return false;
-    }
-    g_maxSession = bleCreate(service, BLE_UUID_MAX_SESSION, rw, "Maximum Session Time");
-    g_maxPumping = bleCreate(service, BLE_UUID_MAX_PUMPING, rw, "Maximum Pumping Time");
-    g_mode = bleCreate(service, BLE_UUID_MODE, rw, "Mode");
-    g_pumpLock = bleCreate(service, BLE_UUID_PUMP_LOCK, rw, "Pump Remote Disabled");
-    g_valveLock = bleCreate(service, BLE_UUID_VALVE_LOCK, rw, "Valve Remote Disabled");
-    g_target = bleCreate(service, BLE_UUID_TARGET, rw, "Target Pressure");
-    g_defaultOn = bleCreate(service, BLE_UUID_DEFAULT_ON, rw, "Default On");
-    g_calibration = bleCreate(service, BLE_UUID_CALIBRATION, rwn, "Calibration Active");
-    g_deadzone = bleCreate(service, BLE_UUID_DEADZONE, rwn, "Pressure Deadzone");
-    return g_deadzone != nullptr;
 }
 
-static bool bleAssignCallbacks(void)
-{
-    assert(g_maxSession != nullptr);
-    assert(g_deadzone != nullptr);
-    if ((g_maxSession == nullptr) || (g_deadzone == nullptr)) {
-        return false;
-    }
-    g_maxSession->setCallbacks(new BleWriteCallbacks(BLE_WRITE_MAX_SESSION));
-    g_maxPumping->setCallbacks(new BleWriteCallbacks(BLE_WRITE_MAX_PUMPING));
-    g_mode->setCallbacks(new BleWriteCallbacks(BLE_WRITE_MODE));
-    g_pumpLock->setCallbacks(new BleWriteCallbacks(BLE_WRITE_PUMP_LOCK));
-    g_valveLock->setCallbacks(new BleWriteCallbacks(BLE_WRITE_VALVE_LOCK));
-    g_target->setCallbacks(new BleWriteCallbacks(BLE_WRITE_TARGET));
-    g_defaultOn->setCallbacks(new BleWriteCallbacks(BLE_WRITE_DEFAULT_ON));
-    g_calibration->setCallbacks(new BleWriteCallbacks(BLE_WRITE_CALIBRATION));
-    g_deadzone->setCallbacks(new BleWriteCallbacks(BLE_WRITE_DEADZONE));
-    return true;
-}
-
-static bool bleUpdateValues(const FwConfig *config, const FwSession *session, bool notify)
+static bool bleSetMode(FwMode mode)
 {
     bool ok = true;
-    assert(config != nullptr);
-    assert(session != nullptr);
-    if ((config == nullptr) || (session == nullptr)) {
+    assert(g_config != nullptr);
+    assert(g_session != nullptr);
+    assert(mode <= FW_MODE_CURRENT_ADAPTIVE);
+    if ((g_config == nullptr) || (g_session == nullptr) || (mode > FW_MODE_CURRENT_ADAPTIVE)) {
         return false;
     }
-    ok = bleSet(g_pump, String(session->pumpActive ? 1 : 0), notify) && ok;
-    ok = bleSet(g_valve, String(session->valveActive ? 1 : 0), notify) && ok;
-    ok = bleSet(g_sessionTime, String(session->currentSessionSeconds), notify) && ok;
-    ok = bleSet(g_pumpTime, String(session->currentPumpingSeconds), notify) && ok;
-    ok = bleSet(g_lastTime, String(session->lastSessionSeconds), notify) && ok;
-    ok = bleSet(g_totalTime, String(session->totalSessionSeconds), notify) && ok;
-    ok = bleSet(g_currentPressure, String(session->currentPressureHpa), notify) && ok;
-    ok = bleSet(g_minPressure, String(session->minPressureHpa), notify) && ok;
-    ok = bleSet(g_maxPressure, String(session->maxPressureHpa), notify) && ok;
+    g_config->mode = mode;
+    if (((mode == FW_MODE_CURRENT_HYSTERESIS) || (mode == FW_MODE_CURRENT_ADAPTIVE)) && !g_session->pumpActive) {
+        ok = fwControllerCaptureCurrentPressure(g_session);
+    }
     return ok;
 }
 
-static bool bleUpdateConfigValues(const FwConfig *config, bool notify)
+static void bleMode(const char *const *data)
 {
-    bool ok = true;
-    bool notifyActive = false;
-    assert(config != nullptr);
-    assert(g_deadzone != nullptr);
-    if (config == nullptr) {
+    FwMode mode = FW_MODE_MANUAL;
+    bool ok = false;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReply("Mode", fwModeToText(g_config->mode));
+        return;
+    }
+    if (!bleHasOneData(data) || !fwModeFromText(data[0], &mode)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    ok = bleSetMode(mode);
+    if (!ok) {
+        bleSendError("operation_failed");
+        return;
+    }
+    bleSendOk();
+}
+
+static void blePump(const char *const *data)
+{
+    bool value = false;
+    bool ok = false;
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyBool("Pump", g_session->pumpActive);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseBool(data[0], &value)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    ok = fwControllerSetPumpCommand(g_config, g_session, value);
+    if (!ok) {
+        bleSendError("operation_failed");
+        return;
+    }
+    bleSendOk();
+}
+
+static void bleValve(const char *const *data)
+{
+    bool value = false;
+    bool ok = false;
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyBool("Valve", g_session->valveActive);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseBool(data[0], &value)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    ok = fwControllerSetValve(g_session, value);
+    if (!ok) {
+        bleSendError("operation_failed");
+        return;
+    }
+    bleSendOk();
+}
+
+static void bleCurrentPressure(const char *const *data)
+{
+    int32_t value = 0L;
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyInt("CurrentPressure", g_session->currentPressureHpa);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseInt32(data[0], &value)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    g_session->currentPressureHpa = value;
+    bleSendOk();
+}
+
+static void bleSessionTime(const char *const *data)
+{
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (!bleHasNoData(data)) {
+        bleSendError("invalid_arguments");
+        return;
+    }
+    (void)bleReplyUint("SessionTime", g_session->currentSessionSeconds);
+}
+
+static void blePumpTime(const char *const *data)
+{
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (!bleHasNoData(data)) {
+        bleSendError("invalid_arguments");
+        return;
+    }
+    (void)bleReplyUint("PumpTime", g_session->currentPumpingSeconds);
+}
+
+static void bleLastSessionTime(const char *const *data)
+{
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (!bleHasNoData(data)) {
+        bleSendError("invalid_arguments");
+        return;
+    }
+    (void)bleReplyUint("LastSessionTime", g_session->lastSessionSeconds);
+}
+
+static void bleTotalSessionTime(const char *const *data)
+{
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (!bleHasNoData(data)) {
+        bleSendError("invalid_arguments");
+        return;
+    }
+    (void)bleReplyUint("TotalSessionTime", g_session->totalSessionSeconds);
+}
+
+static void bleMinimumPressure(const char *const *data)
+{
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (!bleHasNoData(data)) {
+        bleSendError("invalid_arguments");
+        return;
+    }
+    (void)bleReplyInt("MinimumPressure", g_session->minPressureHpa);
+}
+
+static void bleMaximumPressure(const char *const *data)
+{
+    assert(data != nullptr);
+    assert(g_session != nullptr);
+    if (!bleHasNoData(data)) {
+        bleSendError("invalid_arguments");
+        return;
+    }
+    (void)bleReplyInt("MaximumPressure", g_session->maxPressureHpa);
+}
+
+static void bleMaxSession(const char *const *data)
+{
+    int32_t value = 0L;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyUint("MaxSession", g_config->maxSessionSeconds);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseInt32(data[0], &value) || (value < 0L)) {
+        bleSendError("out_of_range");
+        return;
+    }
+    g_config->maxSessionSeconds = (uint32_t)value;
+    bleSendOk();
+}
+
+static void bleMaxPumping(const char *const *data)
+{
+    int32_t value = 0L;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyUint("MaxPumping", g_config->maxPumpingSeconds);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseInt32(data[0], &value) || (value < 0L)) {
+        bleSendError("out_of_range");
+        return;
+    }
+    g_config->maxPumpingSeconds = (uint32_t)value;
+    bleSendOk();
+}
+
+static void blePumpRemoteDisabled(const char *const *data)
+{
+    bool value = false;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyBool("PumpRemoteDisabled", g_config->pumpRemoteDisabled);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseBool(data[0], &value)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    g_config->pumpRemoteDisabled = value;
+    bleSendOk();
+}
+
+static void bleValveRemoteDisabled(const char *const *data)
+{
+    bool value = false;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyBool("ValveRemoteDisabled", g_config->valveRemoteDisabled);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseBool(data[0], &value)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    g_config->valveRemoteDisabled = value;
+    bleSendOk();
+}
+
+static void bleTargetPressure(const char *const *data)
+{
+    int32_t value = 0L;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyInt("TargetPressure", g_config->targetPressureHpa);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseInt32(data[0], &value)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    g_config->targetPressureHpa = value;
+    bleSendOk();
+}
+
+static void bleDefaultOn(const char *const *data)
+{
+    bool value = false;
+    bool ok = false;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyBool("DefaultOn", g_config->defaultOn);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseBool(data[0], &value)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    g_config->defaultOn = value;
+    ok = fwConfigRequestSave(g_config);
+    if (!ok) {
+        bleSendError("operation_failed");
+        return;
+    }
+    bleSendOk();
+}
+
+static void bleCalibrationActive(const char *const *data)
+{
+    bool value = false;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyBool("CalibrationActive", g_config->calibrationActive);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseBool(data[0], &value)) {
+        bleSendError("invalid_value");
+        return;
+    }
+    g_config->calibrationActive = value;
+    bleSendOk();
+}
+
+static void blePressureDeadzone(const char *const *data)
+{
+    int32_t value = 0L;
+    bool ok = false;
+    assert(data != nullptr);
+    assert(g_config != nullptr);
+    if (bleHasNoData(data)) {
+        (void)bleReplyInt("PressureDeadzone", g_config->pressureDeadzoneHpa);
+        return;
+    }
+    if (!bleHasOneData(data) || !bleParseInt32(data[0], &value)
+        || (value < FW_MIN_PRESSURE_DEADZONE_HPA) || (value > FW_MAX_PRESSURE_DEADZONE_HPA)) {
+        bleSendError("out_of_range");
+        return;
+    }
+    g_config->pressureDeadzoneHpa = value;
+    ok = fwConfigRequestSave(g_config);
+    if (!ok) {
+        bleSendError("operation_failed");
+        return;
+    }
+    bleSendOk();
+}
+
+static bool bleRegister(const char *name, bluetooth_command_handler_t handler)
+{
+    bluetooth_command_result_t result = bluetooth_command_result_ok;
+    assert(name != nullptr);
+    assert(handler != nullptr);
+    if ((name == nullptr) || (handler == nullptr)) {
         return false;
     }
-    notifyActive = notify && g_connected;
-    ok = bleSet(g_maxSession, String(config->maxSessionSeconds), false) && ok;
-    ok = bleSet(g_maxPumping, String(config->maxPumpingSeconds), false) && ok;
-    ok = bleSet(g_mode, String(fwModeToText(config->mode)), false) && ok;
-    ok = bleSet(g_pumpLock, String(config->pumpRemoteDisabled ? 1 : 0), false) && ok;
-    ok = bleSet(g_valveLock, String(config->valveRemoteDisabled ? 1 : 0), false) && ok;
-    ok = bleSet(g_target, String(config->targetPressureHpa), false) && ok;
-    ok = bleSet(g_defaultOn, String(config->defaultOn ? 1 : 0), false) && ok;
-    ok = bleSet(g_calibration, String(config->calibrationActive ? 1 : 0), notifyActive) && ok;
-    ok = bleSet(g_deadzone, String(config->pressureDeadzoneHpa), notifyActive) && ok;
+    result = BluetoothCommandAPI::register_command(name, handler);
+    return result == bluetooth_command_result_ok;
+}
+
+static bool bleRegisterCommands(void)
+{
+    bool ok = true;
+    assert(g_config != nullptr);
+    assert(g_session != nullptr);
+    ok = bleRegister("Mode", bleMode) && ok;
+    ok = bleRegister("Pump", blePump) && ok;
+    ok = bleRegister("Valve", bleValve) && ok;
+    ok = bleRegister("CurrentPressure", bleCurrentPressure) && ok;
+    ok = bleRegister("SessionTime", bleSessionTime) && ok;
+    ok = bleRegister("PumpTime", blePumpTime) && ok;
+    ok = bleRegister("LastSessionTime", bleLastSessionTime) && ok;
+    ok = bleRegister("TotalSessionTime", bleTotalSessionTime) && ok;
+    ok = bleRegister("MinimumPressure", bleMinimumPressure) && ok;
+    ok = bleRegister("MaximumPressure", bleMaximumPressure) && ok;
+    ok = bleRegister("MaxSession", bleMaxSession) && ok;
+    ok = bleRegister("MaxPumping", bleMaxPumping) && ok;
+    ok = bleRegister("PumpRemoteDisabled", blePumpRemoteDisabled) && ok;
+    ok = bleRegister("ValveRemoteDisabled", bleValveRemoteDisabled) && ok;
+    ok = bleRegister("TargetPressure", bleTargetPressure) && ok;
+    ok = bleRegister("DefaultOn", bleDefaultOn) && ok;
+    ok = bleRegister("CalibrationActive", bleCalibrationActive) && ok;
+    ok = bleRegister("PressureDeadzone", blePressureDeadzone) && ok;
+    return ok;
+}
+
+static void bleCaptureStatus(const FwSession *session, BleStatus *status)
+{
+    assert(session != nullptr);
+    assert(status != nullptr);
+    if ((session == nullptr) || (status == nullptr)) {
+        return;
+    }
+    status->pumpActive = session->pumpActive;
+    status->valveActive = session->valveActive;
+    status->currentSessionSeconds = session->currentSessionSeconds;
+    status->currentPumpingSeconds = session->currentPumpingSeconds;
+    status->lastSessionSeconds = session->lastSessionSeconds;
+    status->totalSessionSeconds = session->totalSessionSeconds;
+    status->currentPressureHpa = session->currentPressureHpa;
+    status->minPressureHpa = session->minPressureHpa;
+    status->maxPressureHpa = session->maxPressureHpa;
+}
+
+static bool bleStatusChanged(const FwSession *session)
+{
+    assert(session != nullptr);
+    assert(g_started);
+    if (session == nullptr) {
+        return false;
+    }
+    return (session->pumpActive != g_lastStatus.pumpActive)
+        || (session->valveActive != g_lastStatus.valveActive)
+        || (session->currentSessionSeconds != g_lastStatus.currentSessionSeconds)
+        || (session->currentPumpingSeconds != g_lastStatus.currentPumpingSeconds)
+        || (session->lastSessionSeconds != g_lastStatus.lastSessionSeconds)
+        || (session->totalSessionSeconds != g_lastStatus.totalSessionSeconds)
+        || (session->currentPressureHpa != g_lastStatus.currentPressureHpa)
+        || (session->minPressureHpa != g_lastStatus.minPressureHpa)
+        || (session->maxPressureHpa != g_lastStatus.maxPressureHpa);
+}
+
+static bool bleNotifyStatusChanges(const FwSession *session)
+{
+    bool ok = true;
+    assert(session != nullptr);
+    assert(g_started);
+    if (session == nullptr) {
+        return false;
+    }
+    if (!bleStatusChanged(session)) {
+        return true;
+    }
+    if (session->pumpActive != g_lastStatus.pumpActive) {
+        ok = bleNotifyBool("Pump", session->pumpActive) && ok;
+    }
+    if (session->valveActive != g_lastStatus.valveActive) {
+        ok = bleNotifyBool("Valve", session->valveActive) && ok;
+    }
+    if (session->currentSessionSeconds != g_lastStatus.currentSessionSeconds) {
+        ok = bleNotifyUint("SessionTime", session->currentSessionSeconds) && ok;
+    }
+    if (session->currentPumpingSeconds != g_lastStatus.currentPumpingSeconds) {
+        ok = bleNotifyUint("PumpTime", session->currentPumpingSeconds) && ok;
+    }
+    if (session->lastSessionSeconds != g_lastStatus.lastSessionSeconds) {
+        ok = bleNotifyUint("LastSessionTime", session->lastSessionSeconds) && ok;
+    }
+    if (session->totalSessionSeconds != g_lastStatus.totalSessionSeconds) {
+        ok = bleNotifyUint("TotalSessionTime", session->totalSessionSeconds) && ok;
+    }
+    if (session->currentPressureHpa != g_lastStatus.currentPressureHpa) {
+        ok = bleNotifyInt("CurrentPressure", session->currentPressureHpa) && ok;
+    }
+    if (session->minPressureHpa != g_lastStatus.minPressureHpa) {
+        ok = bleNotifyInt("MinimumPressure", session->minPressureHpa) && ok;
+    }
+    if (session->maxPressureHpa != g_lastStatus.maxPressureHpa) {
+        ok = bleNotifyInt("MaximumPressure", session->maxPressureHpa) && ok;
+    }
+    if (ok) {
+        bleCaptureStatus(session, &g_lastStatus);
+    }
     return ok;
 }
 
 bool sysBleInit(FwConfig *config, FwSession *session)
 {
-    BLEService *sessionService = nullptr;
-    BLEService *configService = nullptr;
+    bluetooth_command_result_t result = bluetooth_command_result_ok;
     bool ok = false;
     assert(config != nullptr);
     assert(session != nullptr);
@@ -451,43 +651,30 @@ bool sysBleInit(FwConfig *config, FwSession *session)
     }
     g_config = config;
     g_session = session;
-    BLEDevice::init(FW_DEVICE_NAME);
-    g_server = BLEDevice::createServer();
-    g_server->setCallbacks(new BleServerCallbacks());
-    sessionService = g_server->createService(BLEUUID(BLE_UUID_SESSION_SERVICE), BLE_SESSION_HANDLE_COUNT);
-    configService = g_server->createService(BLEUUID(BLE_UUID_CONFIG_SERVICE), BLE_CONFIG_HANDLE_COUNT);
-    ok = bleCreateSession(sessionService);
-    ok = bleCreateConfig(configService) && ok;
-    ok = bleAssignCallbacks() && ok;
-    ok = bleUpdateValues(config, session, false) && ok;
-    ok = bleUpdateConfigValues(config, false) && ok;
-    sessionService->start();
-    configService->start();
-    g_server->getAdvertising()->addServiceUUID(BLE_UUID_SESSION_SERVICE);
-    g_server->getAdvertising()->addServiceUUID(BLE_UUID_CONFIG_SERVICE);
-    g_server->getAdvertising()->start();
-    g_started = true;
-    Serial.printf("BLE: advertising name=%s\n", FW_DEVICE_NAME);
+    result = BluetoothCommandAPI::begin(FW_DEVICE_NAME);
+    if (result != bluetooth_command_result_ok) {
+        return false;
+    }
+    result = BluetoothCommandAPI::set_transmit_rate_hz(20U);
+    g_started = result == bluetooth_command_result_ok;
+    ok = g_started && bleRegisterCommands();
+    if (ok) {
+        bleCaptureStatus(session, &g_lastStatus);
+        Serial.printf("BLE: BLECommand advertising name=%s\n", FW_DEVICE_NAME);
+    }
     return ok;
 }
 
 bool sysBlePoll(const FwConfig *config, const FwSession *session)
 {
-    uint32_t nowMs = millis();
-    bool ok = false;
     assert(config != nullptr);
     assert(session != nullptr);
     if ((config == nullptr) || (session == nullptr)) {
         return false;
     }
-    if (!g_started) {
+    BluetoothCommandAPI::loop();
+    if (!g_started || !BluetoothCommandAPI::is_connected()) {
         return true;
     }
-    if ((nowMs - g_lastNotifyMs) < FW_BLE_UPDATE_PERIOD_MS) {
-        return true;
-    }
-    g_lastNotifyMs = nowMs;
-    ok = bleUpdateValues(config, session, g_connected);
-    ok = bleUpdateConfigValues(config, g_connected) && ok;
-    return ok;
+    return bleNotifyStatusChanges(session);
 }
